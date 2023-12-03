@@ -2,14 +2,14 @@
 using AAEmu.Game.Models.Game;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Utils;
-
+using AAEmu.Game.Utils.Scripts;
 using NLog;
 
 namespace AAEmu.Game.Scripts.Commands;
 
 public class Sphere : ICommand
 {
-    protected static Logger _log = LogManager.GetCurrentClassLogger();
+    protected static Logger Logger = LogManager.GetCurrentClassLogger();
 
     public void OnLoad()
     {
@@ -26,7 +26,7 @@ public class Sphere : ICommand
         return "/sphere ";
     }
 
-    public void Execute(Character character, string[] args)
+    public void Execute(Character character, string[] args, IMessageOutput messageOutput)
     {
         if (args.Length < 1)
         {

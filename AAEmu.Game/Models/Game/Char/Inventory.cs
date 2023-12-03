@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Packets.G2C;
@@ -7,7 +8,9 @@ using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Actions;
 using AAEmu.Game.Models.Game.Items.Containers;
 using AAEmu.Game.Models.Game.Items.Templates;
+
 using MySql.Data.MySqlClient;
+
 using NLog;
 
 namespace AAEmu.Game.Models.Game.Char;
@@ -15,7 +18,7 @@ namespace AAEmu.Game.Models.Game.Char;
 
 public class Inventory
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     public readonly ICharacter Owner;
 
     public Dictionary<SlotType, ItemContainer> _itemContainers { get; private set; }
@@ -44,7 +47,6 @@ public class Inventory
             {
                 Equipment = Owner.Equipment;
                 Equipment.Owner = Owner;
-                Equipment.PartOfPlayerInventory = true;
                 _itemContainers.Add(st, Equipment);
                 continue;
             }
@@ -70,11 +72,9 @@ public class Inventory
                     Warehouse = newContainer;
                     break;
                 case SlotType.Mail:
-                    newContainer.PartOfPlayerInventory = false;
                     MailAttachments = newContainer;
                     break;
                 case SlotType.System:
-                    newContainer.PartOfPlayerInventory = false;
                     SystemContainer = newContainer;
                     break;
             }
@@ -109,14 +109,14 @@ public class Inventory
                 if (!container.AddOrMoveExistingItem(ItemTaskType.Invalid, item, item.Slot))
                 {
                     item._holdingContainer?.RemoveItem(ItemTaskType.Invalid, item, true);
-                    _log.Error("LoadInventory found unused item type for item, Id {0} ({1}) at {2}:{3} for {4}",
+                    Logger.Error("LoadInventory found unused item type for item, Id {0} ({1}) at {2}:{3} for {4}",
                         item.Id, item.TemplateId, item.SlotType, item.Slot,
                         Owner?.Name ?? "Id:" + item.OwnerId.ToString());
                 }
             }
             else
             {
-                _log.Warn("LoadInventory found unused itemId {0} ({1}) at {2}:{3} for {4}", item.Id,
+                Logger.Warn("LoadInventory found unused itemId {0} ({1}) at {2}:{3} for {4}", item.Id,
                     item.TemplateId, item.SlotType, item.Slot, Owner?.Name ?? "Id:" + item.OwnerId.ToString());
             }
         }
@@ -274,7 +274,7 @@ public class Inventory
         var fromItem = ItemManager.Instance.GetItemByItemId(fromItemId);
         if ((fromItem == null) && (fromItemId != 0))
         {
-            _log.Error($"SplitOrMoveItem - ItemId {fromItemId} no longer exists, possibly a phantom item.");
+            Logger.Error($"SplitOrMoveItem - ItemId {fromItemId} no longer exists, possibly a phantom item.");
             return false;
         }
 
@@ -292,11 +292,11 @@ public class Inventory
         ulong toItemId, SlotType toType, byte toSlot, int count = 0)
     {
         var info = $"SplitOrMoveItem({fromItemId} {fromType}:{fromSlot} => {toItemId} {toType}:{toSlot} - {count})";
-        _log.Trace(info);
+        Logger.Trace(info);
         var fromItem = ItemManager.Instance.GetItemByItemId(fromItemId);
         if ((fromItem == null) && (fromItemId != 0))
         {
-            _log.Error($"SplitOrMoveItem - ItemId {fromItemId} no longer exists, possibly a phantom item.");
+            Logger.Error($"SplitOrMoveItem - ItemId {fromItemId} no longer exists, possibly a phantom item.");
             return false;
         }
 
@@ -324,12 +324,12 @@ public class Inventory
         // Check if containers can accept the items
         if ((targetContainer is not null) && !targetContainer.CanAccept(fromItem, toSlot))
         {
-            _log.Error($"SplitOrMoveItem - fromItemId {fromItemId} is not welcome in this container {targetContainer.ContainerType}.");
+            Logger.Error($"SplitOrMoveItem - fromItemId {fromItemId} is not welcome in this container {targetContainer.ContainerType}.");
             return false;
         }
         if ((sourceContainer is not null) && !sourceContainer.CanAccept(itemInTargetSlot, fromSlot))
         {
-            _log.Error($"SplitOrMoveItem - toItemId {toItemId} is not welcome in this container {sourceContainer.ContainerType}.");
+            Logger.Error($"SplitOrMoveItem - toItemId {toItemId} is not welcome in this container {sourceContainer.ContainerType}.");
             return false;
         }
 
@@ -344,25 +344,25 @@ public class Inventory
         // Check some conditions when we are not equipping into a empty slot
         if ((action != SwapAction.doEquipInEmptySlot) && (fromItem == null))
         {
-            _log.Error("SplitOrMoveItem didn't provide a source itemId");
+            Logger.Error("SplitOrMoveItem didn't provide a source itemId");
             return false;
         }
 
         if ((action != SwapAction.doEquipInEmptySlot) && (sourceContainer?.ContainerType != fromType))
         {
-            _log.Error("SplitOrMoveItem Source Item Container did not match what the client asked");
+            Logger.Error("SplitOrMoveItem Source Item Container did not match what the client asked");
             return false;
         }
 
         if ((action != SwapAction.doEquipInEmptySlot) && (fromItem?.Slot != fromSlot))
         {
-            _log.Error("SplitOrMoveItem Source Item slot did not match what the client asked");
+            Logger.Error("SplitOrMoveItem Source Item slot did not match what the client asked");
             return false;
         }
 
         if ((action != SwapAction.doEquipInEmptySlot) && (count > fromItem?.Count))
         {
-            _log.Error("SplitOrMoveItem Source Item has less item count than is requested to be moved");
+            Logger.Error("SplitOrMoveItem Source Item has less item count than is requested to be moved");
             return false;
         }
 
@@ -371,20 +371,20 @@ public class Inventory
         {
             if (itemInTargetSlot.SlotType != toType)
             {
-                _log.Error("SplitOrMoveItem Target Item Type does not match");
+                Logger.Error("SplitOrMoveItem Target Item Type does not match");
                 return false;
             }
 
             if (itemInTargetSlot.Slot != toSlot)
             {
-                _log.Error("SplitOrMoveItem Target Item Slot does not match");
+                Logger.Error("SplitOrMoveItem Target Item Slot does not match");
                 return false;
             }
 
             if ((action != SwapAction.doEquipInEmptySlot) && (itemInTargetSlot.TemplateId == fromItem.TemplateId) &&
                 (itemInTargetSlot.Count + count > fromItem.Template.MaxCount) && (fromItem.Template.MaxCount > 1))
             {
-                _log.Error("SplitOrMoveItem Target Item stack does not have enough room to take source");
+                Logger.Error("SplitOrMoveItem Target Item stack does not have enough room to take source");
                 return false;
             }
         }
@@ -487,7 +487,7 @@ public class Inventory
 
         if ((doUnEquipOffhand) && (offHandWeapon != null))
         {
-            //_log.Trace("SplitOrMoveItem - UnEquip OffHand required!");
+            //Logger.Trace("SplitOrMoveItem - UnEquip OffHand required!");
             // Check if we have enough space to unequip the offhand
             if (Bag.FreeSlotCount < 1)
                 return false;
@@ -498,7 +498,7 @@ public class Inventory
 
         if (doUnEquipMainHand)
         {
-            //_log.Trace("SplitOrMoveItem - UnEquip MainHand required!");
+            //Logger.Trace("SplitOrMoveItem - UnEquip MainHand required!");
             // Check if we have enough space to unequip the mainhand
             if (Bag.FreeSlotCount < 1)
                 return false;
@@ -555,7 +555,7 @@ public class Inventory
                 // Merge x amount into target
                 var toAddCount = Math.Min(count, itemInTargetSlot.Template.MaxCount - itemInTargetSlot.Count);
                 if (toAddCount < count)
-                    _log.Trace(string.Format("SplitOrMoveItem supplied more than target can take, changed {0} to {1}", count, toAddCount));
+                    Logger.Trace(string.Format("SplitOrMoveItem supplied more than target can take, changed {0} to {1}", count, toAddCount));
                 itemInTargetSlot.Count += toAddCount;
                 fromItem.Count -= toAddCount;
                 if (fromItem.Count > 0)
@@ -593,7 +593,7 @@ public class Inventory
                 break;
             default:
                 Owner.SendMessage("|cFFFF0000SplitOrMoveItem swap action not implemented " + action.ToString() + "|r");
-                _log.Error("SplitOrMoveItem swap action not implemented " + action.ToString());
+                Logger.Error("SplitOrMoveItem swap action not implemented " + action.ToString());
                 break;
         }
 
@@ -820,9 +820,9 @@ public class Inventory
         var tempItem = new Item[10];
 
         if ((numItems % 10) != 0)
-            _log.Warn($"SendFragmentedInventory: Inventory Size not a multiple of 10 ({numItems})");
+            Logger.Warn($"SendFragmentedInventory: Inventory Size not a multiple of 10 ({numItems})");
         if (bag.Length != numItems)
-            _log.Warn($"SendFragmentedInventory: Inventory Size Mismatch; expected {numItems} got {bag.Length}");
+            Logger.Warn($"SendFragmentedInventory: Inventory Size Mismatch; expected {numItems} got {bag.Length}");
 
         for (byte chunk = 0; chunk < (numItems / 10); chunk++)
         {
@@ -850,13 +850,13 @@ public class Inventory
         var expand = expands[index];
         if (expand.Price != 0 && Owner.Money < expand.Price)
         {
-            _log.Warn("No Money for expand!");
+            Logger.Warn("No Money for expand!");
             return;
         }
 
         if (expand.ItemId != 0 && expand.ItemCount != 0 && !CheckItems(SlotType.Inventory, expand.ItemId, expand.ItemCount))
         {
-            _log.Warn("Item or Count not fount.");
+            Logger.Warn("Item or Count not fount.");
             return;
         }
 
@@ -903,7 +903,10 @@ public class Inventory
         //if ((item?.Template.LootQuestId > 0) && (count != 0))
         if (count > 0 && item != null)
         {
-            Owner?.Quests?.OnItemGather(item, count);
+            //Owner?.Quests?.OnItemGather(item, count);
+            // инициируем событие
+            //Task.Run(() => QuestManager.Instance.DoAcquiredEvents((Character)Owner, item.TemplateId, item.Count));
+            QuestManager.Instance.DoAcquiredEvents((Character)Owner, item.TemplateId, item.Count);
         }
     }
 
@@ -922,7 +925,10 @@ public class Inventory
         //if (count > 0 && item != null)
         if (item != null)
         {
-            Owner?.Quests?.OnItemUse(item);
+            //Owner?.Quests?.OnItemUse(item);
+            // инициируем событие
+            //Task.Run(() => QuestManager.Instance.DoConsumedEvents((Character)Owner, item.TemplateId, count));
+            QuestManager.Instance.DoConsumedEvents((Character)Owner, item.TemplateId, count);
         }
     }
 
@@ -953,7 +959,7 @@ public class Inventory
 
         if ((sourceContainer == null) || (targetContainer == null))
         {
-            _log.Error("SwapCofferItems, not all of the targetted containers exist");
+            Logger.Error("SwapCofferItems, not all of the targetted containers exist");
             return false;
         }
 
@@ -982,7 +988,7 @@ public class Inventory
 
         if ((sourceContainer == null) || (targetContainer == null))
         {
-            _log.Error("SwapCofferItems, not all of the targetted containers exist");
+            Logger.Error("SwapCofferItems, not all of the targetted containers exist");
             return false;
         }
 

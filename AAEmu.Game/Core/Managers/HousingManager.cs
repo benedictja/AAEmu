@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -38,7 +38,7 @@ public class HousingManager : Singleton<HousingManager>
 {
     private const uint ForSaleMarkerDoodadId = 6760;
 
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private Dictionary<uint, HousingTemplate> _housingTemplates;
     private Dictionary<uint, House> _houses;
     private Dictionary<ushort, House> _housesTl; // TODO or so mb tlId is id in the active zone? or type of house
@@ -117,7 +117,7 @@ public class HousingManager : Singleton<HousingManager>
 
         using (var connection = SQLite.CreateConnection())
         {
-            _log.Info("Loading Housing Information ...");
+            Logger.Info("Loading Housing Information ...");
 
             using (var command = connection.CreateCommand())
             {
@@ -136,7 +136,7 @@ public class HousingManager : Singleton<HousingManager>
                 }
             }
 
-            _log.Info("Loading Housing Templates...");
+            Logger.Info("Loading Housing Templates...");
 
             var filePath = Path.Combine(FileManager.AppPath, "Data", "housing_bindings.json");
             var contents = FileManager.GetFileContents(filePath);
@@ -145,9 +145,9 @@ public class HousingManager : Singleton<HousingManager>
                     $"File {filePath} doesn't exists or is empty.");
 
             if (JsonHelper.TryDeserializeObject(contents, out List<HousingBindingTemplate> binding, out _))
-                _log.Info("Housing bindings loaded...");
+                Logger.Info("Housing bindings loaded...");
             else
-                _log.Warn("Housing bindings not loaded...");
+                Logger.Warn("Housing bindings not loaded...");
 
             using (var command = connection.CreateCommand())
             {
@@ -203,13 +203,10 @@ public class HousingManager : Singleton<HousingManager>
                                     bindingDoodad.AttachPointId = (AttachPointKind)reader2.GetInt16("attach_point_id");
                                     bindingDoodad.DoodadId = reader2.GetUInt32("doodad_id");
 
-                                    if (templateBindings != null &&
-                                        templateBindings.AttachPointId.ContainsKey(bindingDoodad.AttachPointId))
-                                        bindingDoodad.Position = templateBindings
-                                            .AttachPointId[bindingDoodad.AttachPointId].Clone();
+                                    if (templateBindings != null && templateBindings.AttachPointId.TryGetValue(bindingDoodad.AttachPointId, out var pos))
+                                        bindingDoodad.Position = pos.Clone();
 
-                                    if (bindingDoodad.Position == null)
-                                        bindingDoodad.Position = new WorldSpawnPosition();
+                                    bindingDoodad.Position ??= new WorldSpawnPosition();
 
                                     doodads.Add(bindingDoodad);
                                 }
@@ -221,7 +218,7 @@ public class HousingManager : Singleton<HousingManager>
                 }
             }
 
-            _log.Info("Loaded Housing Templates {0}", _housingTemplates.Count);
+            Logger.Info("Loaded Housing Templates {0}", _housingTemplates.Count);
 
             using (var command = connection.CreateCommand())
             {
@@ -248,7 +245,7 @@ public class HousingManager : Singleton<HousingManager>
                 }
             }
 
-            _log.Info("Loaded Decoration Templates...");
+            Logger.Info("Loaded Decoration Templates...");
 
             using (var command = connection.CreateCommand())
             {
@@ -296,7 +293,7 @@ public class HousingManager : Singleton<HousingManager>
             }
         }
 
-        _log.Info("Loading Player Buildings ...");
+        Logger.Info("Loading Player Buildings ...");
         using (var connection = MySQL.CreateConnection())
         {
             using (var command = connection.CreateCommand())
@@ -342,12 +339,12 @@ public class HousingManager : Singleton<HousingManager>
             }
         }
 
-        _log.Info("Loaded {0} Player Buildings", _houses.Count);
+        Logger.Info("Loaded {0} Player Buildings", _houses.Count);
 
         var houseCheckTask = new HousingTaxTask();
         TaskManager.Instance.Schedule(houseCheckTask, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10));
 
-        _log.Info("Started Housing Tax Timer");
+        Logger.Info("Started Housing Tax Timer");
     }
 
     public (int, int) Save(MySqlConnection connection, MySqlTransaction transaction)
@@ -406,7 +403,7 @@ public class HousingManager : Singleton<HousingManager>
             }
             else
             {
-                _log.Error("Unable to find Untouchable buff template");
+                Logger.Error("Unable to find Untouchable buff template");
             }
         }
         else
@@ -438,7 +435,7 @@ public class HousingManager : Singleton<HousingManager>
                 }
                 else
                 {
-                    _log.Error("Unable to find Removal Debuff template");
+                    Logger.Error("Unable to find Removal Debuff template");
                 }
             }
         }
@@ -498,15 +495,14 @@ public class HousingManager : Singleton<HousingManager>
             requiresPayment = true;
             weeksWithoutPay = 0;
         }
-        else
-        if (house.ProtectionEndDate <= DateTime.UtcNow)
+        else if (house.ProtectionEndDate <= DateTime.UtcNow)
         {
             requiresPayment = true;
             weeksWithoutPay = 1;
         }
 
         /*
-        _log.Debug(
+        Logger.Debug(
             "SCHouseTaxInfoPacket; tlId:{0}, domTaxRate:{1}, deposit: {2}, taxdue:{3}, protectEnd:{4}, isPaid:{5}, weeksWithoutPay:{6}, isHeavy:{7}",
             house.TlId, 0, depositTax, totalTaxAmountDue, house.ProtectionEndDate, requiresPayment, weeksWithoutPay, house.Template.HeavyTax);
         */
@@ -595,7 +591,7 @@ public class HousingManager : Singleton<HousingManager>
                 }
 
                 if (consumedCerts != 0)
-                    _log.Error("Something went wrong when paying tax for new building for player {0}", connection.ActiveChar.Name);
+                    Logger.Error("Something went wrong when paying tax for new building for player {0}", connection.ActiveChar.Name);
             }
         }
         else
@@ -762,9 +758,7 @@ public class HousingManager : Singleton<HousingManager>
         else
         {
             // Non-owner should not be able to press demolish
-#pragma warning disable CA1508 // Avoid dead conditional code
-            connection?.ActiveChar?.SendErrorMessage(ErrorMessageType.InvalidHouseInfo);
-#pragma warning restore CA1508 // Avoid dead conditional code
+            connection.ActiveChar?.SendErrorMessage(ErrorMessageType.InvalidHouseInfo);
             return;
         }
     }
@@ -874,14 +868,14 @@ public class HousingManager : Singleton<HousingManager>
                 var newMail = new MailForTax(house);
                 newMail.FinalizeMail();
                 newMail.Send();
-                _log.Trace("New Tax Mail sent for {0} owned by {1}", house.Name, house.OwnerId);
+                Logger.Trace("New Tax Mail sent for {0} owned by {1}", house.Name, house.OwnerId);
             }
             else
             {
                 foreach (var mail in allMails)
                 {
                     MailForTax.UpdateTaxInfo(mail, house);
-                    _log.Trace("Tax Mail {0} updated for {1} ({2}) owned by {3}", mail.Id, house.Name, house.Id,
+                    Logger.Trace("Tax Mail {0} updated for {1} ({2}) owned by {3}", mail.Id, house.Name, house.Id,
                         house.OwnerId);
                 }
             }
@@ -1000,7 +994,7 @@ public class HousingManager : Singleton<HousingManager>
                 f.Transform.DetachAll();
                 f.ParentObjId = 0;
                 f.ParentObj = null;
-                f.DbHouseId = 0;
+                f.OwnerDbId = 0;
                 // TODO: probably needs to send a packet as well here
                 continue;
             }
@@ -1012,8 +1006,8 @@ public class HousingManager : Singleton<HousingManager>
                 f.Transform.DetachAll();
                 f.ParentObjId = 0;
                 f.ParentObj = null;
-                f.DbHouseId = 0;
-                _log.Warn("ReturnHouseItemsToOwner - Furniture doesn't have design info for Doodad Id:{0} Template:{1}", f.ObjId, f.TemplateId);
+                f.OwnerDbId = 0;
+                Logger.Warn("ReturnHouseItemsToOwner - Furniture doesn't have design info for Doodad Id:{0} Template:{1}", f.ObjId, f.TemplateId);
                 continue;
             }
 
@@ -1063,6 +1057,7 @@ public class HousingManager : Singleton<HousingManager>
 
                     // Is furniture, but doesn't restore, destroy it
                     f.Transform.DetachAll();
+                    f.ItemId = 0;
                     f.Delete();
                 }
                 else
@@ -1089,6 +1084,7 @@ public class HousingManager : Singleton<HousingManager>
                 {
                     returnedItems.Add(thisDoodadsItem);
                     returnedThisItem = true;
+                    f.ItemId = 0; // don't auto-delete
                 }
             }
             else
@@ -1177,7 +1173,7 @@ public class HousingManager : Singleton<HousingManager>
 
         if (newMail != null)
         {
-            _log.Trace("Demolition mail sent to {0}", newMail.ReceiverName);
+            Logger.Trace("Demolition mail sent to {0}", newMail.ReceiverName);
         }
     }
 
@@ -1224,7 +1220,7 @@ public class HousingManager : Singleton<HousingManager>
                 var yMultiplier = (postId / 2) == 0 ? -1 : 1f;
                 var zRot = ((135f + (90f * postId) % 360)).DegToRad();
 
-                var doodad = DoodadManager.Instance.Create(0, ForSaleMarkerDoodadId);
+                var doodad = DoodadManager.Instance.Create(0, ForSaleMarkerDoodadId, null, true);
                 // location
                 doodad.Transform.Local.SetPosition(
                     (house.Template.GardenRadius * xMultiplier) + house.Transform.World.Position.X,
@@ -1241,7 +1237,8 @@ public class HousingManager : Singleton<HousingManager>
                 doodad.UccId = 0;
                 doodad.AttachPoint = AttachPointKind.None;
                 doodad.OwnerType = DoodadOwnerType.Housing;
-                doodad.DbHouseId = house.Id;
+                doodad.OwnerDbId = house.Id;
+                doodad.InitDoodad();
 
                 doodad.Spawn();
             }
@@ -1290,7 +1287,7 @@ public class HousingManager : Singleton<HousingManager>
         if (buyerName == null)
             buyerName = "";
 
-        // Using the GM command does not send the seller (uses null), and thus will not require certificates 
+        // Using the GM command does not send the seller (uses null), and thus will not require certificates
         if (seller != null)
         {
             var certAmount = CalculateSaleCertifcates(house, price);
@@ -1350,7 +1347,7 @@ public class HousingManager : Singleton<HousingManager>
             else
             {
                 // Failed to create Appraisal certificate ?
-                _log.Warn("CancelForSale - Failed to create Appraisal Certificates for mail");
+                Logger.Warn("CancelForSale - Failed to create Appraisal Certificates for mail");
                 return false;
             }
         }
@@ -1385,13 +1382,13 @@ public class HousingManager : Singleton<HousingManager>
     /// <summary>
     /// Buys the house using money amount
     /// </summary>
-    /// <param name="houseId"></param>
+    /// <param name="houseTlId"></param>
     /// <param name="money"></param>
     /// <param name="character"></param>
     /// <returns>Returns true if successful</returns>
-    public bool BuyHouse(uint houseId, uint money, Character character)
+    public bool BuyHouse(ushort houseTlId, uint money, Character character)
     {
-        var house = GetHouseById(houseId);
+        var house = GetHouseByTlId(houseTlId);
 
         if (house == null)
         {
@@ -1506,7 +1503,7 @@ public class HousingManager : Singleton<HousingManager>
         isCheckingTaxTiming = true;
         try
         {
-            // _log.Trace("CheckHousingTaxes");
+            // Logger.Trace("CheckHousingTaxes");
             var expiredHouseList = new List<House>();
             foreach (var house in _houses)
             {
@@ -1521,7 +1518,7 @@ public class HousingManager : Singleton<HousingManager>
         }
         catch (Exception e)
         {
-            _log.Error(e);
+            Logger.Error(e);
         }
 
         isCheckingTaxTiming = false;
@@ -1547,14 +1544,14 @@ public class HousingManager : Singleton<HousingManager>
     /// Places a piece of furniture at a given location, using item and design
     /// </summary>
     /// <param name="player"></param>
-    /// <param name="houseId"></param>
+    /// <param name="houseTlId"></param>
     /// <param name="designId"></param>
     /// <param name="pos"></param>
     /// <param name="quat"></param>
     /// <param name="parentObjId"></param>
     /// <param name="itemId"></param>
     /// <returns></returns>
-    public bool DecorateHouse(Character player, ushort houseId, uint designId, Vector3 pos, Quaternion quat, uint parentObjId, ulong itemId)
+    public bool DecorateHouse(Character player, ushort houseTlId, uint designId, Vector3 pos, Quaternion quat, uint parentObjId, ulong itemId)
     {
         // Check Player
         if (player == null)
@@ -1569,8 +1566,8 @@ public class HousingManager : Singleton<HousingManager>
         }
 
         // Check House
-        var house = GetHouseById(houseId);
-        if ((house == null) || (house.Id != houseId))
+        var house = GetHouseByTlId(houseTlId);
+        if ((house == null) || (house.TlId != houseTlId))
         {
             // Invalid House
             player.SendErrorMessage(ErrorMessageType.InvalidHouseInfo);
@@ -1592,13 +1589,13 @@ public class HousingManager : Singleton<HousingManager>
         }
         */
 
-        var doodad = DoodadManager.Instance.Create(0, decorationDesign.DoodadId);
+        var doodad = DoodadManager.Instance.Create(0, decorationDesign.DoodadId, house, true);
         doodad.Transform.Parent = house.Transform;
         doodad.Transform.Local.SetPosition(pos.X, pos.Y, pos.Z);
         doodad.Transform.Local.ApplyFromQuaternion(quat);
         doodad.ItemTemplateId = item.TemplateId; // designId;
         doodad.ItemId = (item.Template.MaxCount <= 1) ? itemId : 0;
-        doodad.DbHouseId = house.Id;
+        doodad.OwnerDbId = house.Id;
 
         if (house.Id > 0 && item is BigFish fish)
         {
@@ -1620,6 +1617,7 @@ public class HousingManager : Singleton<HousingManager>
             coffer.InitializeCoffer(player.Id);
         }
 
+        doodad.InitDoodad();
         doodad.Spawn();
         doodad.Save();
 
@@ -1635,7 +1633,7 @@ public class HousingManager : Singleton<HousingManager>
             res = player.Inventory.SystemContainer.AddOrMoveExistingItem(ItemTaskType.DoodadCreate, item);
         }
 
-        // _log.Debug("DecorateHouse => DoodadTemplate: {0} , DoodadId {1}, Pos: {2}", doodad.TemplateId, doodad.ObjId, doodad.Transform.ToString());
+        // Logger.Debug("DecorateHouse => DoodadTemplate: {0} , DoodadId {1}, Pos: {2}", doodad.TemplateId, doodad.ObjId, doodad.Transform.ToString());
 
         return res;
     }

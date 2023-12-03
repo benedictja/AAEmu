@@ -1,9 +1,9 @@
-﻿using System.Linq;
-using AAEmu.Game.Models.Game.Quests.Templates;
-using AAEmu.Game.Models.Game.Char;
+﻿using System.Collections.Generic;
+using System.Linq;
 using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Models.Game.Char;
+using AAEmu.Game.Models.Game.Quests.Templates;
 using AAEmu.Game.Models.Game.Skills;
-using System.Collections.Generic;
 
 namespace AAEmu.Game.Models.Game.Quests.Acts;
 
@@ -16,7 +16,7 @@ public class QuestActObjAbilityLevel : QuestActTemplate
 
     public override bool Use(ICharacter character, Quest quest, int objective)
     {
-        _log.Warn("QuestActObjAbilityLevel");
+        Logger.Warn("QuestActObjAbilityLevel");
 
         var completes = new List<bool>();
         for (var i = 1; i < 11; i++)
@@ -27,7 +27,7 @@ public class QuestActObjAbilityLevel : QuestActTemplate
         for (var i = 0; i < 10; i++)
         {
             var ability = character.Abilities.Abilities[(AbilityType)i + 1];
-            int abLevel = ExpirienceManager.Instance.GetLevelFromExp(ability.Exp);
+            int abLevel = ExperienceManager.Instance.GetLevelFromExp(ability.Exp);
             completes[i] = abLevel >= Level;
         }
 

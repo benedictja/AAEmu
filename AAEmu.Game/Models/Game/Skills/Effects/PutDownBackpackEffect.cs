@@ -23,7 +23,7 @@ public class PutDownBackpackEffect : EffectTemplate
         CastAction castObj, EffectSource source, SkillObject skillObject, DateTime time,
         CompressedGamePackets packetBuilder = null)
     {
-        _log.Trace("PutDownBackpackEffect");
+        Logger.Trace("PutDownBackpackEffect");
 
         Character character = (Character)caster;
         if (character == null) return;
@@ -58,12 +58,12 @@ public class PutDownBackpackEffect : EffectTemplate
         if (character.Inventory.SystemContainer.AddOrMoveExistingItem(Items.Actions.ItemTaskType.DropBackpack, item))
         {
             // Spawn doodad
-            _log.Trace("PutDownPackEffect");
+            Logger.Trace("PutDownPackEffect");
 
-            var doodad = DoodadManager.Instance.Create(0, BackpackDoodadId, character);
+            var doodad = DoodadManager.Instance.Create(0, BackpackDoodadId, character, true);
             if (doodad == null)
             {
-                _log.Warn("Doodad {0}, from BackpackDoodadId could not be created", BackpackDoodadId);
+                Logger.Warn("Doodad {0}, from BackpackDoodadId could not be created", BackpackDoodadId);
                 return;
             }
             doodad.IsPersistent = true;
@@ -76,13 +76,14 @@ public class PutDownBackpackEffect : EffectTemplate
             doodad.PlantTime = DateTime.UtcNow;
             if (targetHouse != null)
             {
-                doodad.DbHouseId = targetHouse.Id;
+                doodad.OwnerDbId = targetHouse.Id;
                 doodad.OwnerType = DoodadOwnerType.Housing;
                 doodad.ParentObj = targetHouse;
                 doodad.ParentObjId = targetHouse.ObjId;
                 doodad.Transform.Parent = targetHouse.Transform; // Does not work as intended yet
             }
 
+            doodad.InitDoodad();
             doodad.Spawn();
             doodad.Save();
 

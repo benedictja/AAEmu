@@ -16,9 +16,11 @@ public class QuestActSupplyItem : QuestActTemplate
     public bool DropWhenDestroy { get; set; }
     public bool DestroyWhenDrop { get; set; }
 
+    private int Objective { get; set; }
+
     public override bool Use(ICharacter character, Quest quest, int objective)
     {
-        _log.Warn("QuestActSupplyItem");
+        Logger.Warn("QuestActSupplyItem");
 
         if (objective >= Count) // checking for call recursion
         {
@@ -44,6 +46,14 @@ public class QuestActSupplyItem : QuestActTemplate
             }
         }
 
+        Objective = Count;
+
         return acquireSuccessful;
+    }
+    public override int GetCount()
+    {
+        Logger.Debug("Получим, сколько уже имеем предметов по заданию.");
+
+        return Objective;
     }
 }

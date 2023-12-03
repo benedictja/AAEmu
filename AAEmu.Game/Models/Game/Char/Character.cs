@@ -2,6 +2,8 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data;
+using System.Drawing;
+
 using AAEmu.Commons.Network;
 using AAEmu.Commons.Utils;
 using AAEmu.Commons.Utils.DB;
@@ -13,43 +15,25 @@ using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Chat;
 using AAEmu.Game.Models.Game.DoodadObj;
 using AAEmu.Game.Models.Game.DoodadObj.Static;
+using AAEmu.Game.Models.Game.FishSchools;
 using AAEmu.Game.Models.Game.Formulas;
 using AAEmu.Game.Models.Game.Items;
 using AAEmu.Game.Models.Game.Items.Actions;
 using AAEmu.Game.Models.Game.Items.Containers;
 using AAEmu.Game.Models.Game.Items.Templates;
+using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Buffs;
 using AAEmu.Game.Models.Game.Static;
 using AAEmu.Game.Models.Game.Units;
-using AAEmu.Game.Models.StaticValues;
+using AAEmu.Game.Models.Game.Units.Static;
 using AAEmu.Game.Models.Game.World.Transform;
-using MySql.Data.MySqlClient;
-using System.Drawing;
-using AAEmu.Game.Models.Game.NPChar;
-using AAEmu.Game.Models.Game.FishSchools;
+using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Utils;
 
+using MySql.Data.MySqlClient;
+
 namespace AAEmu.Game.Models.Game.Char;
-
-public enum Race : byte
-{
-    None = 0,
-    Nuian = 1,
-    Fairy = 2,
-    Dwarf = 3,
-    Elf = 4,
-    Hariharan = 5,
-    Ferre = 6,
-    Returned = 7,
-    Warborn = 8
-}
-
-public enum Gender : byte
-{
-    Male = 1,
-    Female = 2
-}
 
 public partial class Character : Unit, ICharacter
 {
@@ -70,7 +54,6 @@ public partial class Character : Unit, ICharacter
     public AbilityType Ability1 { get; set; }
     public AbilityType Ability2 { get; set; }
     public AbilityType Ability3 { get; set; }
-    public DateTime LastCombatActivity { get; set; }
     public DateTime LastCast { get; set; }
     //public bool IsInCombat { get; set; } // there's already an isInBattle
     public bool IsInPostCast { get; set; }
@@ -97,13 +80,13 @@ public partial class Character : Unit, ICharacter
     public int PrevPoint { get; set; }
     public int Point { get; set; }
     public int Gift { get; set; }
-    public int Expirience { get; set; }
+    public int Experience { get; set; }
     public int RecoverableExp { get; set; }
     public DateTime Created { get; set; } // время создания персонажа
     public DateTime Updated { get; set; } // время внесения изменений
 
-    public uint ReturnDictrictId { get; set; }
-    public uint ResurrectionDictrictId { get; set; }
+    public uint ReturnDistrictId { get; set; }
+    public uint ResurrectionDistrictId { get; set; }
 
     public override UnitCustomModelParams ModelParams { get; set; }
     public override float Scale => 1f;
@@ -139,12 +122,12 @@ public partial class Character : Unit, ICharacter
     public WorldSpawnPosition LocalPingPosition { get; set; } // added as a GM command helper
     private ConcurrentDictionary<uint, DateTime> _hostilePlayers { get; set; }
     public bool IsRiding { get; set; }
+    /// <summary>
+    /// AttachPoint the player currently has in use  
+    /// </summary>
+    public AttachPointKind AttachedPoint { get; set; }
 
-    private bool _inParty;
-    private bool _isOnline;
-
-    private bool _isUnderWater;
-    public bool IsUnderWater
+    public override bool IsUnderWater
     {
         get { return _isUnderWater; }
         set
@@ -156,6 +139,9 @@ public partial class Character : Unit, ICharacter
             SendPacket(new SCUnderWaterPacket(_isUnderWater));
         }
     }
+
+    private bool _inParty;
+    private bool _isOnline;
 
     public bool InParty
     {
@@ -1285,23 +1271,30 @@ public partial class Character : Unit, ICharacter
             var totalExp = exp * AppConfiguration.Instance.World.ExpRate;
             exp = (int)totalExp;
         }
-        Expirience = Math.Min(Expirience + exp, ExpirienceManager.Instance.GetExpForLevel(55));
+        Experience = Math.Min(Experience + exp, ExperienceManager.Instance.GetExpForLevel(55));
         if (shouldAddAbilityExp)
             Abilities.AddActiveExp(exp); // TODO ... or all?
         SendPacket(new SCExpChangedPacket(ObjId, exp, shouldAddAbilityExp));
         CheckLevelUp();
-        Quests.OnLevelUp(); // TODO added for quest Id=5967
+
+        //Quests.OnLevelUp(); // TODO added for quest Id=5967
+        // инициируем событие
+        //Task.Run(() => QuestManager.Instance.DoOnLevelUpEvents(Connection.ActiveChar));
+        if (Connection != null)
+        {
+            QuestManager.Instance.DoOnLevelUpEvents(Connection.ActiveChar);
+        }
     }
 
     public void CheckLevelUp()
     {
-        var needExp = ExpirienceManager.Instance.GetExpForLevel((byte)(Level + 1));
+        var needExp = ExperienceManager.Instance.GetExpForLevel((byte)(Level + 1));
         var change = false;
-        while (Expirience >= needExp)
+        while (Experience >= needExp)
         {
             change = true;
             Level++;
-            needExp = ExpirienceManager.Instance.GetExpForLevel((byte)(Level + 1));
+            needExp = ExperienceManager.Instance.GetExpForLevel((byte)(Level + 1));
         }
 
         if (change)
@@ -1313,14 +1306,14 @@ public partial class Character : Unit, ICharacter
 
     public void CheckExp()
     {
-        var needExp = ExpirienceManager.Instance.GetExpForLevel(Level);
-        if (Expirience < needExp)
-            Expirience = needExp;
-        needExp = ExpirienceManager.Instance.GetExpForLevel((byte)(Level + 1));
-        while (Expirience >= needExp)
+        var needExp = ExperienceManager.Instance.GetExpForLevel(Level);
+        if (Experience < needExp)
+            Experience = needExp;
+        needExp = ExperienceManager.Instance.GetExpForLevel((byte)(Level + 1));
+        while (Experience >= needExp)
         {
             Level++;
-            needExp = ExpirienceManager.Instance.GetExpForLevel((byte)(Level + 1));
+            needExp = ExperienceManager.Instance.GetExpForLevel((byte)(Level + 1));
         }
     }
 
@@ -1388,7 +1381,7 @@ public partial class Character : Unit, ICharacter
         {
             actabilityChange = Math.Abs(change);
             actabilityStep = Actability.Actabilities[(uint)actabilityId].Step;
-            Actability.AddPoint((uint)actabilityId, actabilityChange);
+            actabilityChange = Actability.AddPoint((uint)actabilityId, actabilityChange);
         }
 
         // Only grant xp if consuming labor
@@ -1421,7 +1414,7 @@ public partial class Character : Unit, ICharacter
                 VocationPoint += change;
                 break;
             default:
-                Log.Error($"ChangeGamePoints - Unknown Game Point Type {kind}");
+                Logger.Error($"ChangeGamePoints - Unknown Game Point Type {kind}");
                 return;
         }
         SendPacket(new SCGamePointChangedPacket((byte)kind, change));
@@ -1430,7 +1423,7 @@ public partial class Character : Unit, ICharacter
     public override int GetAbLevel(AbilityType type)
     {
         if (type == AbilityType.General) return Level;
-        return ExpirienceManager.Instance.GetLevelFromExp(Abilities.Abilities[type].Exp);
+        return ExperienceManager.Instance.GetLevelFromExp(Abilities.Abilities[type].Exp);
     }
 
     public void ResetSkillCooldown(uint skillId, bool gcd)
@@ -1566,12 +1559,12 @@ public partial class Character : Unit, ICharacter
     {
         if (AccessLevel > 0)
         {
-            Log.Debug("{0}'s FallDamage disabled because of GM or Admin flag", Name);
+            Logger.Debug("{0}'s FallDamage disabled because of GM or Admin flag", Name);
             return 0; // GM & Admin take 0 damage from falling
             // TODO: Make this a option, or allow settings of minimum access level
         }
         var fallDamage = base.DoFallDamage(fallVel);
-        Log.Debug("FallDamage: {0} - Vel {1} DmgPerc: {2}, Damage {3}", Name, fallVel, (int)((fallVel - 8600) / 150f), fallDamage);
+        Logger.Debug("FallDamage: {0} - Vel {1} DmgPerc: {2}, Damage {3}", Name, fallVel, (int)((fallVel - 8600) / 150f), fallDamage);
         return fallDamage;
     }
 
@@ -1584,7 +1577,13 @@ public partial class Character : Unit, ICharacter
         var item = Inventory.GetItemById(id);
         if (item is { Count: > 0 })
         {
-            Quests.OnItemUse(item);
+            //Quests.OnItemUse(item);
+            // инициируем событие
+            Events?.OnItemUse(this, new OnItemUseArgs
+            {
+                ItemId = item.TemplateId,
+                Count = item.Count
+            });
         }
     }
 
@@ -1665,6 +1664,28 @@ public partial class Character : Unit, ICharacter
         get { return (Breath <= 0); }
     }
 
+    public override void ReduceCurrentHp(BaseUnit attacker, int value, KillReason killReason = KillReason.Damage)
+    {
+        if (AppConfiguration.Instance.World.GodMode)
+        {
+            Logger.Debug($"{Name}'s damage disabled because of GodMode flag (normal damage: {value})");
+            return; // GodMode On : take no damage at all
+        }
+
+        base.ReduceCurrentHp(attacker, value, killReason);
+    }
+
+    public override void PostUpdateCurrentHp(BaseUnit attacker, int oldHpValue, int newHpValue, KillReason killReason = KillReason.Damage)
+    {
+        if (IsInDuel)
+        {
+            Hp = 1; // we don't let you die during a duel
+            return;
+        }
+
+        base.PostUpdateCurrentHp(attacker, oldHpValue, newHpValue, killReason);
+    }
+
     public void DoChangeBreath()
     {
         if (IsDrowning)
@@ -1692,19 +1713,19 @@ public partial class Character : Unit, ICharacter
 
             if (!Inventory.Bag.Items.Contains(item) && !Equipment.Items.Contains(item))
             {
-                Log.Warn("Attempting to repair an item that isn't in your inventory or equipment, Item: {0}", item.Id);
+                Logger.Warn("Attempting to repair an item that isn't in your inventory or equipment, Item: {0}", item.Id);
                 continue;
             }
 
             if (!(item is EquipItem equipItem && item.Template is EquipItemTemplate))
             {
-                Log.Warn("Attempting to repair a non-equipment item, Item: {0}", item.Id);
+                Logger.Warn("Attempting to repair a non-equipment item, Item: {0}", item.Id);
                 continue;
             }
 
             if (equipItem.Durability >= equipItem.MaxDurability)
             {
-                Log.Warn("Attempting to repair an item that has max durability, Item: {0}", item.Id);
+                Logger.Warn("Attempting to repair an item that has max durability, Item: {0}", item.Id);
                 continue;
             }
 
@@ -1715,7 +1736,7 @@ public partial class Character : Unit, ICharacter
 
             if (!npc.Template.Blacksmith)
             {
-                Log.Warn("Attempting to repair an item while not at a blacksmith, Item: {0}, NPC: {1}", item.Id, npc);
+                Logger.Warn("Attempting to repair an item while not at a blacksmith, Item: {0}, NPC: {1}", item.Id, npc);
                 continue;
             }
 
@@ -1731,7 +1752,7 @@ public partial class Character : Unit, ICharacter
 
             if (Money < currentRepairCost)
             {
-                Log.Warn("Not enough money to repair, Item: {0}, Money: {1}, RepairCost: {2}", item.Id, Money, currentRepairCost);
+                Logger.Warn("Not enough money to repair, Item: {0}, Money: {1}, RepairCost: {2}", item.Id, Money, currentRepairCost);
                 continue;
             }
 
@@ -1750,12 +1771,14 @@ public partial class Character : Unit, ICharacter
         Connection.SendPacket(new SCItemTaskSuccessPacket(ItemTaskType.Repair, tasks, new List<ulong>()));
     }
 
-    public void Regenerate()
+    public override void Regenerate()
     {
         if (IsDead || !NeedsRegen || IsDrowning)
         {
             return;
         }
+
+        var oldHp = Hp;
 
         if (IsInBattle)
         {
@@ -1778,6 +1801,7 @@ public partial class Character : Unit, ICharacter
         Hp = Math.Min(Hp, MaxHp);
         Mp = Math.Min(Mp, MaxMp);
         BroadcastPacket(new SCUnitPointsPacket(ObjId, Hp, Mp), true);
+        PostUpdateCurrentHp(this, oldHp, Hp, KillReason.Unknown);
     }
 
     /// <summary>
@@ -1834,7 +1858,7 @@ public partial class Character : Unit, ICharacter
                     character.Race = (Race)reader.GetByte("race");
                     character.Gender = (Gender)reader.GetByte("gender");
                     character.Level = reader.GetByte("level");
-                    character.Expirience = reader.GetInt32("expirience");
+                    character.Experience = reader.GetInt32("experience");
                     character.RecoverableExp = reader.GetInt32("recoverable_exp");
                     character.Hp = reader.GetInt32("hp");
                     character.Mp = reader.GetInt32("mp");
@@ -1880,7 +1904,7 @@ public partial class Character : Unit, ICharacter
                     character.ExpandedExpert = reader.GetByte("expanded_expert");
                     character.Created = reader.GetDateTime("created_at");
                     character.Updated = reader.GetDateTime("updated_at");
-                    character.ReturnDictrictId = reader.GetUInt32("return_district");
+                    character.ReturnDistrictId = reader.GetUInt32("return_district");
 
                     character.Inventory = new Inventory(character);
 
@@ -1892,6 +1916,7 @@ public partial class Character : Unit, ICharacter
                     if (character.Mp > character.MaxMp)
                         character.Mp = character.MaxMp;
                     character.CheckExp();
+                    character.PostUpdateCurrentHp(character, 0, character.Hp, KillReason.Unknown);
                 }
             }
         }
@@ -1942,7 +1967,7 @@ public partial class Character : Unit, ICharacter
                     character.Race = (Race)reader.GetByte("race");
                     character.Gender = (Gender)reader.GetByte("gender");
                     character.Level = reader.GetByte("level");
-                    character.Expirience = reader.GetInt32("expirience");
+                    character.Experience = reader.GetInt32("experience");
                     character.RecoverableExp = reader.GetInt32("recoverable_exp");
                     character.Hp = reader.GetInt32("hp");
                     character.Mp = reader.GetInt32("mp");
@@ -1988,7 +2013,7 @@ public partial class Character : Unit, ICharacter
                     character.ExpandedExpert = reader.GetByte("expanded_expert");
                     character.Created = reader.GetDateTime("created_at");
                     character.Updated = reader.GetDateTime("updated_at");
-                    character.ReturnDictrictId = reader.GetUInt32("return_district");
+                    character.ReturnDistrictId = reader.GetUInt32("return_district");
 
                     character.Inventory = new Inventory(character);
 
@@ -2000,6 +2025,7 @@ public partial class Character : Unit, ICharacter
                     if (character.Mp > character.MaxMp)
                         character.Mp = character.MaxMp;
                     character.CheckExp();
+                    character.PostUpdateCurrentHp(character, 0, character.Hp, KillReason.Unknown);
                 }
             }
         }
@@ -2042,7 +2068,7 @@ public partial class Character : Unit, ICharacter
                     }
                 default:
                     {
-                        Log.Error("LoadActionSlots, Unknown ActionSlotType!");
+                        Logger.Error("LoadActionSlots, Unknown ActionSlotType!");
                         break;
                     }
             }
@@ -2071,7 +2097,7 @@ public partial class Character : Unit, ICharacter
         }
         catch (Exception ex)
         {
-            Log.Warn($"LoadActionSlots, error while loading for character {Id}, {ex.Message}");
+            Logger.Warn($"LoadActionSlots, error while loading for character {Id}, {ex.Message}");
         }
     }
 
@@ -2102,7 +2128,7 @@ public partial class Character : Unit, ICharacter
                     }
                 default:
                     {
-                        Log.Error("GetActionSlotsAsBlob, Unknown ActionSlotType!");
+                        Logger.Error("GetActionSlotsAsBlob, Unknown ActionSlotType!");
                         break;
                     }
             }
@@ -2114,7 +2140,7 @@ public partial class Character : Unit, ICharacter
     {
         var template = CharacterManager.Instance.GetTemplate((byte)Race, (byte)Gender);
         ModelId = template.ModelId;
-        BuyBackItems = new ItemContainer(Id, SlotType.None, false, false);
+        BuyBackItems = new ItemContainer(Id, SlotType.None, false);
         Slots = new ActionSlot[MaxActionSlots];
         for (var i = 0; i < Slots.Length; i++)
             Slots[i] = new ActionSlot();
@@ -2171,7 +2197,7 @@ public partial class Character : Unit, ICharacter
                 catch (Exception e)
                 {
                     saved = false;
-                    Log.Error(e, "Character save failed for {0} - {1}\n", Id, Name);
+                    Logger.Error(e, "Character save failed for {0} - {1}\n", Id, Name);
                     try
                     {
                         transaction.Rollback();
@@ -2179,7 +2205,7 @@ public partial class Character : Unit, ICharacter
                     catch (Exception eRollback)
                     {
                         // Really failed here
-                        Log.Fatal(eRollback, "Character save rollback failed for {0} - {1}\n", Id, Name);
+                        Logger.Fatal(eRollback, "Character save rollback failed for {0} - {1}\n", Id, Name);
                     }
                 }
             }
@@ -2204,7 +2230,7 @@ public partial class Character : Unit, ICharacter
                 // ----
                 command.CommandText =
                     "REPLACE INTO `characters` " +
-                    "(`id`,`account_id`,`name`,`access_level`,`race`,`gender`,`unit_model_params`,`level`,`expirience`,`recoverable_exp`," +
+                    "(`id`,`account_id`,`name`,`access_level`,`race`,`gender`,`unit_model_params`,`level`,`experience`,`recoverable_exp`," +
                     "`hp`,`mp`,`labor_power`,`labor_power_modified`,`consumed_lp`,`ability1`,`ability2`,`ability3`," +
                     "`world_id`,`zone_id`,`x`,`y`,`z`,`roll`,`pitch`,`yaw`," +
                     "`faction_id`,`faction_name`,`expedition_id`,`family`,`dead_count`,`dead_time`,`rez_wait_duration`,`rez_time`,`rez_penalty_duration`,`leave_time`," +
@@ -2212,7 +2238,7 @@ public partial class Character : Unit, ICharacter
                     "`delete_request_time`,`transfer_request_time`,`delete_time`,`bm_point`,`auto_use_aapoint`,`prev_point`,`point`,`gift`," +
                     "`num_inv_slot`,`num_bank_slot`,`expanded_expert`,`slots`,`created_at`,`updated_at`,`return_district`" +
                     ") VALUES (" +
-                    "@id,@account_id,@name,@access_level,@race,@gender,@unit_model_params,@level,@expirience,@recoverable_exp," +
+                    "@id,@account_id,@name,@access_level,@race,@gender,@unit_model_params,@level,@experience,@recoverable_exp," +
                     "@hp,@mp,@labor_power,@labor_power_modified,@consumed_lp,@ability1,@ability2,@ability3," +
                     "@world_id,@zone_id,@x,@y,@z,@yaw,@pitch,@roll," +
                     "@faction_id,@faction_name,@expedition_id,@family,@dead_count,@dead_time,@rez_wait_duration,@rez_time,@rez_penalty_duration,@leave_time," +
@@ -2228,7 +2254,7 @@ public partial class Character : Unit, ICharacter
                 command.Parameters.AddWithValue("@gender", (byte)Gender);
                 command.Parameters.AddWithValue("@unit_model_params", unitModelParams);
                 command.Parameters.AddWithValue("@level", Level);
-                command.Parameters.AddWithValue("@expirience", Expirience);
+                command.Parameters.AddWithValue("@experience", Experience);
                 command.Parameters.AddWithValue("@recoverable_exp", RecoverableExp);
                 command.Parameters.AddWithValue("@hp", Hp);
                 command.Parameters.AddWithValue("@mp", Mp);
@@ -2278,7 +2304,7 @@ public partial class Character : Unit, ICharacter
                 command.Parameters.AddWithValue("@slots", GetActionSlotsAsBlob());
                 command.Parameters.AddWithValue("@created_at", Created);
                 command.Parameters.AddWithValue("@updated_at", Updated);
-                command.Parameters.AddWithValue("@return_district", ReturnDictrictId);
+                command.Parameters.AddWithValue("@return_district", ReturnDistrictId);
                 command.ExecuteNonQuery();
             }
 
@@ -2313,7 +2339,7 @@ public partial class Character : Unit, ICharacter
         }
         catch (Exception ex)
         {
-            Log.Error(ex);
+            Logger.Error(ex);
             result = false;
         }
 

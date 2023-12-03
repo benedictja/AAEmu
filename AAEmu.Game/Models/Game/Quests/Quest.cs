@@ -25,7 +25,7 @@ using AAEmu.Game.Utils;
 
 namespace AAEmu.Game.Models.Game.Quests;
 
-public class Quest : PacketMarshaler
+public partial class Quest : PacketMarshaler
 {
     private const int ObjectiveCount = 5;
     private readonly ISphereQuestManager _sphereQuestManager;
@@ -35,34 +35,36 @@ public class Quest : PacketMarshaler
     private readonly IExpressTextManager _expressTextManager;
     private readonly IWorldManager _worldManager;
     public long Id { get; set; }
-    public uint TemplateId { get; set; }
+    public uint TemplateId { get; set; } // QuestId
     public IQuestTemplate Template { get; set; }
+    internal int[] Objectives { get; set; }
+    public List<bool> ProgressStepResults { get; set; } = new(); // нужно для проверки шага Progress
     public QuestStatus Status { get; set; }
-    public int[] Objectives { get; set; }
     public QuestComponentKind Step { get; set; }
+    public QuestConditionObj Condition { get; set; }
+    public bool ReadyToReportNpc { get; set; }
     public DateTime Time { get; set; }
     public ICharacter Owner { get; set; }
-    public int LeftTime => Time > DateTime.UtcNow ? (int)(Time - DateTime.UtcNow).TotalMilliseconds : -1;
-    public int SupplyItem { get; set; }
+    private int LeftTime => Time > DateTime.UtcNow ? (int)(Time - DateTime.UtcNow).TotalMilliseconds : -1;
+    private int SupplyItem { get; set; }
     public bool EarlyCompletion { get; set; }
     public bool ExtraCompletion { get; set; }
     public int OverCompletionPercent { get; set; }
     public long DoodadId { get; set; }
-    public long ObjId { get; set; }
-    public uint ComponentId { get; set; }
-    public QuestAcceptorType QuestAcceptorType { get; set; }
-    public uint AcceptorType { get; set; }
-    public QuestCompleteTask QuestTask { get; set; }
+    private long ObjId { get; set; }
+    public uint ComponentId { get; set; } // нужно для пакета SCQuestContext...
+    public uint CurrentComponentId { get; set; } // отслеживаем текущий номер компонента с которым работаем
+    public QuestAcceptorType QuestAcceptorType { get; set; } // нужно для пакета SCQuestContext...
+    public uint AcceptorType { get; set; } // нужно для пакета SCQuestContext...
+    private QuestCompleteTask QuestTask { get; set; }
     public List<ItemCreationDefinition> QuestRewardItemsPool { get; set; }
+    public List<ItemCreationDefinition> QuestCleanupItemsPool { get; set; }
     public int QuestRewardCoinsPool { get; set; }
     public int QuestRewardExpPool { get; set; }
 
-    public uint GetActiveComponent()
-    {
-        return Template.GetFirstComponent(Step).Id;
-    }
-
-    public Quest(IQuestTemplate questTemplate, IQuestManager questManager, ISphereQuestManager sphereQuestManager, ITaskManager taskManager, ISkillManager skillManager, IExpressTextManager expressTextManager, IWorldManager worldManager)
+    public Quest(IQuestTemplate questTemplate, IQuestManager questManager, ISphereQuestManager sphereQuestManager,
+        ITaskManager taskManager, ISkillManager skillManager, IExpressTextManager expressTextManager,
+        IWorldManager worldManager)
     {
         _questManager = questManager;
         _sphereQuestManager = sphereQuestManager;
@@ -83,6 +85,8 @@ public class Quest : PacketMarshaler
         ExtraCompletion = false;
         ObjId = 0;
         QuestRewardItemsPool = new List<ItemCreationDefinition>();
+        QuestCleanupItemsPool = new List<ItemCreationDefinition>();
+        ReadyToReportNpc = false;
     }
 
     public Quest() : this(
@@ -105,6 +109,11 @@ public class Quest : PacketMarshaler
         ExpressTextManager.Instance,
         WorldManager.Instance)
     {
+    }
+
+    public uint GetActiveComponentId()
+    {
+        return Template.GetFirstComponent(Step).Id;
     }
 
     private QuestStatus CalculateQuestStatus(QuestComponent currentComponent)
@@ -194,11 +203,11 @@ public class Quest : PacketMarshaler
                                 {
                                     ComponentId = currentComponent.Id;
                                     Status = CalculateQuestStatus(currentComponent);
-                                    _log.Info($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                    Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                 }
                                 else
                                 {
-                                    _log.Warn($"[Quest] Start failed: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                    Logger.Debug($"[Quest] Start failed: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                     return false;
                                     //Not the NPC that is needed by the quest, the exit)
                                 }
@@ -215,7 +224,7 @@ public class Quest : PacketMarshaler
                                 supply = res;
                                 // если было пополнение предметом, то на метод Update() не переходить (
                                 // If there was a replenishment of an object, then do not go to the Update() method)
-                                _log.Warn("[Quest] Start: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, res {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, res, act.DetailType);
+                                Logger.Debug("[Quest] Start: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, res {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, res, act.DetailType);
                                 break;
                             }
                         case "QuestActCheckTimer":
@@ -223,14 +232,14 @@ public class Quest : PacketMarshaler
                                 // TODO настройка и старт таймера ограничения времени на квест (Timer - setting and starting time limit for the quest)
                                 var template = act.GetTemplate<QuestActCheckTimer>();
                                 res = act.Use(Owner, this, template.LimitTime);
-                                _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                 break;
                             }
                         case "QuestActObjSphere":
                             {
                                 // только для сфер (for spheres only)
                                 Owner.SendPacket(new SCQuestContextStartedPacket(this, ComponentId));
-                                _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                 Update();
                                 return true;
                             }
@@ -239,7 +248,7 @@ public class Quest : PacketMarshaler
                                 //case "QuestActObjTalk":
                                 //case "QuestActObjTalkNpcGroup":
                                 supply = true; // прерываем цикл и на метод Update() не переходим (interrupt the cycle and do not go to the update() method)
-                                _log.Warn("[Quest] Start: character {0}, default don't do it - {1}, ComponentId {2}, Step {3}, Status {4}, res {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, res, act.DetailType);
+                                Logger.Debug("[Quest] Start: character {0}, default don't do it - {1}, ComponentId {2}, Step {3}, Status {4}, res {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, res, act.DetailType);
                                 // TODO added for quest Id=4402
                                 goto EndLoop;
                             }
@@ -282,7 +291,7 @@ EndLoop:
                     switch (act.DetailType)
                     {
                         default:
-                            _log.Warn($"[Quest] Start: character {Owner.Name}, default don't do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                            Logger.Debug($"[Quest] Start: character {Owner.Name}, default don't do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                             break;
                         case "QuestActConAcceptItem":
                         case "QuestActConAcceptDoodad": // старт ежедневного квеста (start of the daily quest)
@@ -292,11 +301,11 @@ EndLoop:
                             {
                                 ComponentId = components[componentIndex].Id;
                                 Status = CalculateQuestStatus(components[componentIndex]);
-                                _log.Warn("[Quest] Start: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, res {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, res, act.DetailType);
+                                Logger.Debug("[Quest] Start: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, res {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, res, act.DetailType);
                             }
                             else
                             {
-                                _log.Warn($"[Quest] Start failed: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] Start failed: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                 return; // не тот Npc, что нужен по квесту, выход (not the Npc that is needed on the quest, exit)
                             }
                             UseSkillAndBuff(components[componentIndex]);
@@ -307,7 +316,7 @@ EndLoop:
                                 act.Use(Owner, this, 0);
                                 ComponentId = components[componentIndex].Id;
                                 Status = CalculateQuestStatus(components[componentIndex]);
-                                _log.Warn("[Quest] Start: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, res {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, res, act.DetailType);
+                                Logger.Debug("[Quest] Start: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, res {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, res, act.DetailType);
                                 UseSkillAndBuff(components[componentIndex]);
                                 SetNpcAggro(components[componentIndex]);
                                 break;
@@ -316,7 +325,7 @@ EndLoop:
                             {
                                 res = act.Use(Owner, this, 0); // получим предмет (get the item)
                                 Step = QuestComponentKind.Supply; // в процессе работы метода ItemGather  переключается на Progress (in the process of ItemGather method operation switches to Progress)
-                                _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                 break;
                             }
                         case "QuestActCheckTimer":
@@ -324,19 +333,19 @@ EndLoop:
                                 // TODO настройка и старт таймера ограничения времени на квест (Timer - setting and starting time limit for the quest)
                                 var template = act.GetTemplate<QuestActCheckTimer>();
                                 res = act.Use(Owner, this, template.LimitTime);
-                                _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                 break;
                             }
                         case "QuestActObjSphere":
                             {
                                 // только для сфер (for spheres only)
                                 Owner.SendPacket(new SCQuestContextStartedPacket(this, ComponentId));
-                                _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                 Update();
                                 return;
                             }
                     }
-                    // _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[i].DetailType}");
+                    // Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[i].DetailType}");
                 }
             }
         }
@@ -407,7 +416,7 @@ EndLoop:
                         case "QuestActSupplyItem" when Step == QuestComponentKind.Supply:
                             {
                                 complete = act.Use(Owner, this, SupplyItem);
-                                _log.Warn("[Quest] Update: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, complete {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, complete, act.DetailType);
+                                Logger.Debug("[Quest] Update: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, complete {5}, act.DetailType {6}", Owner.Name, TemplateId, ComponentId, Step, Status, complete, act.DetailType);
                                 var next = QuestComponentKind.Progress;
                                 var componentnext = Template.GetFirstComponent(next);
                                 if (componentnext == null)
@@ -429,7 +438,7 @@ EndLoop:
                                             complete = false;
                                             break;
                                     }
-                                    _log.Warn($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
+                                    Logger.Debug($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
                                 }
                                 break;
                             }
@@ -451,14 +460,14 @@ EndLoop:
                                     UseSkillAndBuff(currentComponent);
                                     // компонент - выполнен, мы у нужного Npc (component - done, we're at the right Npc)
                                     Status = QuestStatus.Ready;
-                                    _log.Warn($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
+                                    Logger.Debug($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
                                     Owner.SendPacket(new SCQuestContextUpdatedPacket(this, ComponentId));
                                     Owner.Quests.Complete(TemplateId, 0);
                                     return;
                                 }
                                 // компонент - выполнен (component - done)
                                 Status = QuestStatus.Ready;
-                                _log.Warn($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
                                 break;
                             }
                         case "QuestActConAutoComplete":
@@ -466,7 +475,7 @@ EndLoop:
                                 // компонент - выполнен (component - ready)
                                 complete = true;
                                 Status = QuestStatus.Ready;
-                                _log.Warn($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
                                 Owner.SendPacket(new SCQuestContextUpdatedPacket(this, ComponentId));
                                 Owner.Quests.Complete(TemplateId, 0);
                                 return;
@@ -487,8 +496,8 @@ EndLoop:
 
                                         if (sphereQuestTrigger.Sphere == null)
                                         {
-                                            _log.Warn($"[Quest] QuestActObjSphere: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
-                                            _log.Warn($"[Quest] QuestActObjSphere: Sphere not found with cquest {components[componentIndex].Id} in quest_sign_spheres.json!");
+                                            Logger.Debug($"[Quest] QuestActObjSphere: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
+                                            Logger.Debug($"[Quest] QuestActObjSphere: Sphere not found with cquest {components[componentIndex].Id} in quest_sign_spheres.json!");
                                             return;
                                         }
 
@@ -505,7 +514,7 @@ EndLoop:
                                     {
                                         await Task.Delay(Duration);
                                     });
-                                    _log.Warn($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
+                                    Logger.Debug($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
                                     return;
                                 }
 
@@ -513,8 +522,8 @@ EndLoop:
                                 // if the sphere is missing for some reason, we will assume that we have visited it
                                 Status = QuestStatus.Progress;
                                 Owner.SendMessage($"[Quest] {Owner.Name}, quest {TemplateId}, Sphere not found - skipped...");
-                                _log.Warn($"[Quest] QuestActObjSphere: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, act.DetailType {act.DetailType}");
-                                _log.Warn($"[Quest] QuestActObjSphere: Sphere not found with cquest {ComponentId} in quest_sign_spheres!");
+                                Logger.Debug($"[Quest] QuestActObjSphere: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] QuestActObjSphere: Sphere not found with cquest {ComponentId} in quest_sign_spheres!");
                                 complete = true;
                                 break;
                             }
@@ -567,7 +576,7 @@ EndLoop:
                                                         npc.Simulation.GoToPath(npc, true);
                                                         break;
                                                     default:
-                                                        throw new ArgumentOutOfRangeException();
+                                                        throw new NotSupportedException(nameof(currentComponent.AiPathTypeId));
                                                 }
                                                 break;
                                             }
@@ -585,7 +594,7 @@ EndLoop:
                                     case QuestNpcAiName.RunCommandSet:
                                         break;
                                     default:
-                                        throw new ArgumentOutOfRangeException();
+                                        throw new NotSupportedException(nameof(currentComponent.NpcAiId));
                                 }
                                 break;
                             }
@@ -644,7 +653,7 @@ EndLoop:
                             }
                     }
                     SupplyItem = 0;
-                    _log.Warn($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
+                    Logger.Debug($"[Quest] Update: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, complete {complete}, act.DetailType {act.DetailType}");
                 }
 
                 if (Step == QuestComponentKind.Progress && complete)
@@ -714,7 +723,7 @@ EndLoop:
         var targetNpcMatch = acts.Any(t => t.Use(Owner, this, Objectives[componentIndex]));
         if (!targetNpcMatch)
         {
-            _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[0].DetailType}");
+            Logger.Warn($"[Quest] Start: character {Owner.Name}, NPC doesn't match - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[0].DetailType}");
             return;
         }
 
@@ -723,7 +732,7 @@ EndLoop:
         ComponentId = currentComponent.Id;
         Status = CalculateQuestStatus(currentComponent);
 
-        _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[0].DetailType}");
+        Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[0].DetailType}");
         UseSkillAndBuff(currentComponent);
         SetNpcAggro(currentComponent);
     }
@@ -738,7 +747,7 @@ EndLoop:
         var targetNpcMatch = acts.Any(t => t.Use(Owner, this, Objectives[componentIndex]));
         if (!targetNpcMatch)
         {
-            _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[0].DetailType}");
+            Logger.Warn($"[Quest] Start: character {Owner.Name}, npc doesn't match - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[0].DetailType}");
             return;
         }
 
@@ -747,7 +756,7 @@ EndLoop:
         ComponentId = currentComponent.Id;
         Status = CalculateQuestStatus(currentComponent);
 
-        _log.Warn($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[0].DetailType}");
+        Logger.Debug($"[Quest] Start: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {acts[0].DetailType}");
         UseSkillAndBuff(currentComponent);
         SetNpcAggro(currentComponent);
     }
@@ -756,7 +765,7 @@ EndLoop:
     /// Use Skill на себя или на Npc, с которым взаимодействуем (Use Skill on yourself or on the Npc you interact with)
     /// </summary>
     /// <param name="component"></param>
-    private void UseSkillAndBuff(QuestComponent component)
+    public void UseSkillAndBuff(QuestComponent component)
     {
         if (component == null) { return; }
         UseSkill(component);
@@ -805,7 +814,7 @@ EndLoop:
         // Distribute Items if needed
         if (QuestRewardItemsPool.Count > 0)
         {
-            // TODO: Add a way to distribute honor or vocation badges in mail as well 
+            // TODO: Add a way to distribute honor or vocation badges in mail as well
 
             if (Owner.Inventory.Bag.FreeSlotCount < QuestRewardItemsPool.Count)
             {
@@ -848,19 +857,27 @@ EndLoop:
             Owner.ChangeMoney(SlotType.None, SlotType.Inventory, QuestRewardCoinsPool);
             QuestRewardCoinsPool = 0;
         }
+
+        // Cleanup used Items from quest
+        if (QuestCleanupItemsPool.Count > 0)
+        {
+            foreach (var cleanupItem in QuestCleanupItemsPool)
+                Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestComplete, cleanupItem.TemplateId, cleanupItem.Count, null);
+            QuestCleanupItemsPool.Clear();
+        }
     }
 
     public uint Complete(int selected)
     {
         var res = false;
         var reportNpc = false;
-        //var step = QuestComponentKind.Ready; // покажем, что заканчиваем квест (let's show you that we're finishing the quest)
-        for (Step = QuestComponentKind.Ready; Step <= QuestComponentKind.Reward; Step++)
+        var step = QuestComponentKind.Ready; // покажем, что заканчиваем квест (let's show you that we're finishing the quest)
+        for (step = QuestComponentKind.Ready; step <= QuestComponentKind.Reward; step++)
         {
-            if (Step >= QuestComponentKind.Drop)
+            if (step >= QuestComponentKind.Drop)
                 Status = QuestStatus.Completed;
 
-            var components = Template.GetComponents(Step);
+            var components = Template.GetComponents(step);
             if (components.Length == 0)
                 continue;
 
@@ -870,7 +887,7 @@ EndLoop:
                 var acts = _questManager.GetActs(currentComponent.Id);
                 CheckReportNpcs(acts, componentIndex, currentComponent, ref res, ref reportNpc);
 
-                if (Step == QuestComponentKind.Ready)
+                if (step is QuestComponentKind.Ready or QuestComponentKind.Reward)
                     ComponentId = currentComponent.Id;
 
                 var selective = 0;
@@ -888,7 +905,7 @@ EndLoop:
                             res = act.Use(Owner, this, Objectives[componentIndex]);
                             if (ComponentId == 0)
                                 ComponentId = currentComponent.Id;
-                            _log.Warn($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                            Logger.Debug($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                             break;
                         case "QuestActSupplySelectiveItem":
                             {
@@ -898,33 +915,34 @@ EndLoop:
                                     res = act.Use(Owner, this, Objectives[componentIndex]);
                                     if (ComponentId == 0)
                                         ComponentId = currentComponent.Id;
-                                    _log.Warn($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                                    Logger.Debug($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                                 }
                                 break;
                             }
                         case "QuestActSupplyItem":
-                            var prevStep = Step; // сохраним, так как Step изменится на Progress (we will save it, since Step will change to Progress)
+                            var prevStep = step; // сохраним, так как Step изменится на Progress (we will save it, since Step will change to Progress)
                             res = act.Use(Owner, this, 0); // всегда получаем предметы в конце квеста (always get items at the end of the quest)
-                            Step = prevStep;
+                            step = prevStep;
                             if (ComponentId == 0)
                                 ComponentId = currentComponent.Id;
-                            _log.Warn($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                            Logger.Debug($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                             break;
                         case "QuestActConAutoComplete":
                             res = true;
                             if (ComponentId == 0)
                                 ComponentId = currentComponent.Id;
-                            _log.Warn($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                            Logger.Debug($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                             break;
                         default:
+
                             res = act.Use(Owner, this, Objectives[componentIndex]);
                             if (ComponentId == 0)
                                 ComponentId = currentComponent.Id;
-                            _log.Warn($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                            Logger.Debug($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                             break;
                     }
                     SupplyItem = 0;
-                    // _log.Warn($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
+                    // Logger.Debug($"[Quest] Complete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, res {res}, act.DetailType {act.DetailType}");
                 }
 
                 if (!res)
@@ -960,22 +978,22 @@ EndLoop:
                     {
                         var template = act.GetTemplate<QuestActSupplyExp>();
                         value = template.Exp;
-                        _log.Warn("[Quest] GetCustomSupplies Exp: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType);
+                        Logger.Debug("[Quest] GetCustomSupplies Exp: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType);
                         break;
                     }
                 case "QuestActSupplyCoppers" when supply == "copper":
                     {
                         var template = act.GetTemplate<QuestActSupplyCopper>();
                         value = template.Amount;
-                        _log.Warn("[Quest] GetCustomSupplies Coppers: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType);
+                        Logger.Debug("[Quest] GetCustomSupplies Coppers: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType);
                         break;
                     }
                 default:
                     value = 0;
-                    _log.Warn("[Quest] GetCustomSupplies: character {0}, wants to do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType);
+                    Logger.Debug("[Quest] GetCustomSupplies: character {0}, wants to do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType);
                     break;
             }
-            //_log.Warn("[Quest] GetCustomSupplies: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType);
+            //Logger.Debug("[Quest] GetCustomSupplies: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType);
         }
         return value;
     }
@@ -998,27 +1016,30 @@ EndLoop:
                         case "QuestActSupplyItem" when step == QuestComponentKind.Supply:
                             {
                                 var template = act.GetTemplate<QuestActSupplyItem>();
-                                if (template.DestroyWhenDrop && Owner.Inventory.Equipment.GetItemBySlot((int)EquipmentItemSlotType.Backpack)?.TemplateId == template.ItemId)
+                                if (template.DestroyWhenDrop || template.DropWhenDestroy || template.Cleanup)
                                 {
-                                    Owner.Inventory.TakeoffBackpack(ItemTaskType.QuestRemoveSupplies);
+                                    if (template.DestroyWhenDrop && Owner.Inventory.Equipment.GetItemBySlot((int)EquipmentItemSlotType.Backpack)?.TemplateId == template.ItemId)
+                                        Owner.Inventory.TakeoffBackpack(ItemTaskType.QuestRemoveSupplies);
+                                    // удалим только то количество, которое требуется по квесту
+                                    Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, template.Count, null);
+                                    Logger.Warn("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, template.Count);
                                 }
                                 //Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, template.Count, null);
                                 Objectives[componentIndex] = Owner.Inventory.GetItemsCount(template.ItemId);
                                 Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, Objectives[componentIndex], null);
                                 //items.AddRange(Owner.Inventory.RemoveItem(template.ItemId, template.Count));
-                                _log.Warn("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, template.Count);
+                                Logger.Debug("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, template.Count);
                                 break;
                             }
                         case "QuestActObjItemGather":
                             {
                                 var template = act.GetTemplate<QuestActObjItemGather>();
-                                if (template.DestroyWhenDrop)
+                                if (template.DestroyWhenDrop || template.DropWhenDestroy || template.Cleanup)
                                 {
-                                    //Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, template.Count, null);
-                                    Objectives[componentIndex] = Owner.Inventory.GetItemsCount(template.ItemId);
-                                    Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, Objectives[componentIndex], null);
-                                    //items.AddRange(Owner.Inventory.RemoveItem(template.ItemId, template.Count));
-                                    _log.Warn("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, template.Count);
+                                    // удалим только то количество, которое требуется по квесту
+                                    var itemCount = Template.LetItDone || Template.Score > 0 ? Owner.Inventory.GetItemsCount(template.ItemId) : template.Count;
+                                    Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, itemCount, null);
+                                    Logger.Warn("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, itemCount);
                                 }
                                 break;
                             }
@@ -1027,11 +1048,9 @@ EndLoop:
                                 var template = act.GetTemplate<QuestActObjItemUse>();
                                 if (template.DropWhenDestroy)
                                 {
-                                    //Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, template.Count, null);
-                                    Objectives[componentIndex] = Owner.Inventory.GetItemsCount(template.ItemId);
-                                    Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, Objectives[componentIndex], null);
-                                    //items.AddRange(Owner.Inventory.RemoveItem(template.ItemId, template.Count));
-                                    _log.Warn("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, template.Count);
+                                    // удалим только то количество, которое требуется по квесту
+                                    Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, template.Count, null);
+                                    Logger.Warn("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, template.Count);
                                 }
                                 break;
                             }
@@ -1039,12 +1058,12 @@ EndLoop:
                             {
                                 // TODO: added for quest Id=5700
                                 var template = act.GetTemplate<QuestActConAcceptItem>();
-                                if (template.DropWhenDestroy || template.Cleanup)
+                                if (template.DestroyWhenDrop || template.DropWhenDestroy || template.Cleanup)
                                 {
                                     var count = Owner.Inventory.GetItemsCount(template.ItemId);
                                     Objectives[componentIndex] = count;
                                     Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, Objectives[componentIndex], null);
-                                    _log.Warn("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, count);
+                                    Logger.Debug("[Quest] RemoveQuestItems: character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, count);
                                 }
                                 break;
                             }
@@ -1053,10 +1072,76 @@ EndLoop:
                                 // TODO: added for quest Id=2037
                                 var template = act.GetTemplate<QuestActSupplyRemoveItem>();
                                 Owner.Inventory.ConsumeItem(null, ItemTaskType.QuestRemoveSupplies, template.ItemId, template.Count, null);
-                                _log.Warn("[Quest] RemoveQuestItems:QuestActSupplyRemoveItem character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, template.Count);
+                                Logger.Debug("[Quest] RemoveQuestItems:QuestActSupplyRemoveItem character {0}, do it - {1}, ComponentId {2}, Step {3}, Status {4}, act.DetailType {5}, ItemId {6}, Count {7}", Owner.Name, TemplateId, ComponentId, Step, Status, act.DetailType, template.ItemId, template.Count);
                                 break;
                             }
                     }
+                }
+            }
+        }
+    }
+    private void ClearQuestStatus()
+    {
+        var components = Template.GetComponents(QuestComponentKind.Progress);
+        if (components.Length == 0)
+            return;
+
+        for (var componentIndex = 0; componentIndex < components.Length; componentIndex++)
+        {
+            var acts = _questManager.GetActs(components[componentIndex].Id);
+            foreach (var act in acts)
+            {
+                switch (act.DetailType)
+                {
+                    case "QuestActObjMonsterHunt":
+                        {
+                            var template = act.GetTemplate<QuestActObjMonsterHunt>();
+                            template.ClearStatus();
+                            Logger.Info($"[Quest][ClearQuestStatus]: character={Owner.Name}, quest={TemplateId}, ComponentId={ComponentId}, Step={Step}, Status={Status}, act.DetailType={act.DetailType}");
+                            break;
+                        }
+                    case "QuestActObjMonsterGroupHunt":
+                        {
+                            var template = act.GetTemplate<QuestActObjMonsterGroupHunt>();
+                            template.ClearStatus();
+                            Logger.Info($"[Quest][ClearQuestStatus]: character={Owner.Name}, quest={TemplateId}, ComponentId={ComponentId}, Step={Step}, Status={Status}, act.DetailType={act.DetailType}");
+                            break;
+                        }
+                    case "QuestActObjInteraction":
+                        {
+                            var template = act.GetTemplate<QuestActObjInteraction>();
+                            template.ClearStatus();
+                            Logger.Info($"[Quest][ClearQuestStatus]: character={Owner.Name}, quest={TemplateId}, ComponentId={ComponentId}, Step={Step}, Status={Status}, act.DetailType={act.DetailType}");
+                            break;
+                        }
+                    case "QuestActObjItemGather":
+                        {
+                            var template = act.GetTemplate<QuestActObjItemGather>();
+                            template.ClearStatus();
+                            Logger.Info($"[Quest][ClearQuestStatus]: character={Owner.Name}, quest={TemplateId}, ComponentId={ComponentId}, Step={Step}, Status={Status}, act.DetailType={act.DetailType}");
+                            break;
+                        }
+                    case "QuestActObjItemGroupGather":
+                        {
+                            var template = act.GetTemplate<QuestActObjItemGroupGather>();
+                            template.ClearStatus();
+                            Logger.Info($"[Quest][ClearQuestStatus]: character={Owner.Name}, quest={TemplateId}, ComponentId={ComponentId}, Step={Step}, Status={Status}, act.DetailType={act.DetailType}");
+                            break;
+                        }
+                    case "QuestActObjItemGroupUse":
+                        {
+                            var template = act.GetTemplate<QuestActObjItemGroupUse>();
+                            template.ClearStatus();
+                            Logger.Info($"[Quest][ClearQuestStatus]: character={Owner.Name}, quest={TemplateId}, ComponentId={ComponentId}, Step={Step}, Status={Status}, act.DetailType={act.DetailType}");
+                            break;
+                        }
+                    case "QuestActObjItemUse":
+                        {
+                            var template = act.GetTemplate<QuestActObjItemUse>();
+                            template.ClearStatus();
+                            Logger.Info($"[Quest][ClearQuestStatus]: character={Owner.Name}, quest={TemplateId}, ComponentId={ComponentId}, Step={Step}, Status={Status}, act.DetailType={act.DetailType}");
+                            break;
+                        }
                 }
             }
         }
@@ -1076,9 +1161,10 @@ EndLoop:
         if (update)
             Owner.SendPacket(new SCQuestContextUpdatedPacket(this, 0));
 
+        //RemoveQuestBuffs(); // TODO добавить удаление примененных во время квеста бафов при cleanup == true
         RemoveQuestItems();
-        for (var i = 0; i < ObjectiveCount; i++)
-            Objectives[i] = 0;
+        ClearQuestStatus();
+        ClearObjectives();
     }
 
     #region Events
@@ -1124,7 +1210,7 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] OnReportToNpc: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnReportToNpc: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
         }
         Update(checking);
@@ -1156,7 +1242,7 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] OnReportToDoodad: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnReportToDoodad: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
         }
         Update(checking);
@@ -1188,7 +1274,7 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] OnTalkMade: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnTalkMade: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
         }
         Update(checking);
@@ -1242,7 +1328,7 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] OnKill: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnKill: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
         }
         Update(checking);
@@ -1278,13 +1364,12 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] OnAggro: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnAggro: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, act.DetailType {act.DetailType}");
             }
         }
         //Update(checking);
     }
 
-    
     public void OnItemGather(Item item, int count)
     {
         var checking = false;
@@ -1310,7 +1395,7 @@ EndLoop:
                                 SupplyItem += count; // the same as Objectives, but for QuestActSupplyItem
                                 if (tmpStep == QuestComponentKind.Supply)
                                 {
-                                    _log.Warn($"[Quest] OnItemGather: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                                    Logger.Debug($"[Quest] OnItemGather: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
                                     Step = tmpStep;
                                     return; // возврат в метод Start() (return to Start() method)
                                 }
@@ -1345,7 +1430,7 @@ EndLoop:
                         //        goto exit;
                         //    }
                 }
-                _log.Warn($"[Quest] OnItemGather: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnItemGather: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
             //exit:;
         }
@@ -1396,7 +1481,7 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] OnItemUse: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnItemUse: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
         }
         Update(checking);
@@ -1432,13 +1517,13 @@ EndLoop:
                                 {
                                     checking = true;
                                     Objectives[componentIndex]++;
-                                    _log.Warn($"[Quest] OnInteraction: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                                    Logger.Debug($"[Quest] OnInteraction: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
                                 }
                             }
                             break;
                         }
                     default:
-                        _log.Warn($"[Quest] OnInteraction: character {Owner.Name}, wants to do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                        Logger.Debug($"[Quest] OnInteraction: character {Owner.Name}, wants to do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
                         break;
                 }
             }
@@ -1473,7 +1558,7 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] OnExpressEmotion: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnExpressEmotion: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
         }
         Update(checking);
@@ -1511,7 +1596,7 @@ EndLoop:
 
                                 checking = true;
                                 Objectives[componentIndex]++;
-                                _log.Warn(
+                                Logger.Debug(
                                     $"[Quest] OnLevelUp: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
                                 break;
                             }
@@ -1519,11 +1604,11 @@ EndLoop:
                             {
                                 checking = true;
                                 Objectives[componentIndex]++;
-                                _log.Warn($"[Quest] OnLevelUp: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] OnLevelUp: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
                                 break;
                             }
                         default:
-                            _log.Warn($"[Quest] OnInteraction: character {Owner.Name}, wants to do it - {TemplateId}, ComponentId {ComponentId}, Step {step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                            Logger.Debug($"[Quest] OnInteraction: character {Owner.Name}, wants to do it - {TemplateId}, ComponentId {ComponentId}, Step {step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
                             break;
                     }
                 }
@@ -1557,7 +1642,7 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] OnQuestComplete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] OnQuestComplete: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
         }
 
@@ -1582,20 +1667,20 @@ EndLoop:
                     case "QuestActObjSphere":
                         {
                             var template = act.GetTemplate<QuestActObjSphere>();
-                            if (components[componentIndex].Id == sphereQuest.ComponentID)
+                            if (components[componentIndex].Id == sphereQuest.ComponentId)
                             {
                                 checking = act.Use(Owner, this, 0);
                                 Status = QuestStatus.Ready;
                                 ComponentId = components[componentIndex].Id;
                                 //Owner.SendPacket(new SCQuestContextUpdatedPacket(this, ComponentId));
-                                _log.Warn($"[Quest] OnEnterSphere: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                                Logger.Debug($"[Quest] OnEnterSphere: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
                                 Step++;
                             }
                             break;
                         }
                     default:
                         // здесь еще есть компоненты, которые не проверили (there are still components here that haven't been tested)
-                        _log.Warn($"[Quest] OnEnterSphere: character {Owner.Name}, wants to do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                        Logger.Debug($"[Quest] OnEnterSphere: character {Owner.Name}, wants to do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
                         break;
                 }
             }
@@ -1637,7 +1722,7 @@ EndLoop:
                             break;
                         }
                 }
-                _log.Warn($"[Quest] QuestActObjCraft: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
+                Logger.Debug($"[Quest] QuestActObjCraft: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, checking {checking}, act.DetailType {act.DetailType}");
             }
         }
         Update(checking);
@@ -1702,7 +1787,7 @@ EndLoop:
                         break;
                     }
             }
-            _log.Warn($"[Quest] RecalcObjectives: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, act.DetailType {act.DetailType}");
+            Logger.Debug($"[Quest] RecalcObjectives: character {Owner.Name}, do it - {TemplateId}, ComponentId {ComponentId}, Step {Step}, Status {Status}, act.DetailType {act.DetailType}");
         }
 
         Update(send);
@@ -1711,6 +1796,8 @@ EndLoop:
     public void ClearObjectives()
     {
         Objectives = new int[ObjectiveCount];
+        for (var i = 0; i < ObjectiveCount; i++)
+            Objectives[i] = 0;
     }
 
     public int[] GetObjectives(QuestComponentKind step)
@@ -1735,8 +1822,8 @@ EndLoop:
         stream.Write(0u);             // type(id)
         stream.WriteBc((uint)ObjId);  // ObjId
         stream.WriteBc((uint)ObjId);  // ObjId
-        stream.Write(LeftTime);
-        stream.Write(0u);                      // type(id)
+        stream.Write(LeftTime);       // quest time limit
+        stream.Write(LeftTime == -1 ? 0 : ComponentId); // type(id) - indicates which step is limited
         stream.Write(DoodadId);                // doodadId
         stream.Write(DateTime.UtcNow);         // acceptTime
         stream.Write((byte)QuestAcceptorType); // type QuestAcceptorType
@@ -1774,5 +1861,6 @@ EndLoop:
         stream.Write(Time);
         return stream.GetBytes();
     }
+
     #endregion
 }

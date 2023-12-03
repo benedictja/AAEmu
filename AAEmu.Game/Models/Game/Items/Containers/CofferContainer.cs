@@ -4,18 +4,12 @@ using AAEmu.Game.Models.Game.Items.Templates;
 
 namespace AAEmu.Game.Models.Game.Items.Containers;
 
-public enum ChestType
-{
-    Otherworldly = 0, // private character bound items only
-    Chest = 1, // normal house storage chest with settable permissions
-}
-
 public class CofferContainer : ItemContainer
 {
     public byte CofferPermission { get; set; }
     public ChestType CofferType { get; set; }
 
-    public CofferContainer(uint ownerId, bool isPartOfPlayerInventory, bool createWithNewId) : base(ownerId, SlotType.Trade, isPartOfPlayerInventory, createWithNewId)
+    public CofferContainer(uint ownerId, bool createWithNewId) : base(ownerId, SlotType.Trade, createWithNewId)
     {
         // Coffers are considered trade windows in the item manipulation code
         CofferPermission = 0;
@@ -56,7 +50,7 @@ public class CofferContainer : ItemContainer
         for (var i = Items.Count - 1; i >= 0; i--)
         {
             var item = Items[i];
-            _log.Warn($"Destroying item {item.Id} from coffer item_container {ContainerId} due to delete");
+            Logger.Warn($"Destroying item {item.Id} from coffer item_container {ContainerId} due to delete");
             item._holdingContainer.RemoveItem(ItemTaskType.Invalid, item, true);
         }
 

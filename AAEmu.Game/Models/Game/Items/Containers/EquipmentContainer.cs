@@ -7,7 +7,7 @@ namespace AAEmu.Game.Models.Game.Items.Containers;
 
 public class EquipmentContainer : ItemContainer
 {
-    public EquipmentContainer(uint ownerId, SlotType containerType, bool isPartOfPlayerInventory, bool createWithNewId) : base(ownerId, containerType, isPartOfPlayerInventory, createWithNewId)
+    public EquipmentContainer(uint ownerId, SlotType containerType, bool createWithNewId) : base(ownerId, containerType, createWithNewId)
     {
         // Fancy way of getting the last enum value + 1 for equipment slots
         ContainerSize = (int)(Enum.GetValues(typeof(EquipmentItemSlot)).Cast<EquipmentItemSlot>().Max()) + 1;
@@ -157,7 +157,7 @@ public class EquipmentContainer : ItemContainer
 
         if ((targetSlot < 0) || (targetSlot >= ContainerSize))
         {
-            _log.Warn($"{Owner?.Name} ({OwnerId}) tried to equip a item that is out of range of the valid slots {targetSlot}/{ContainerSize}");
+            Logger.Warn($"{Owner?.Name} ({OwnerId}) tried to equip a item that is out of range of the valid slots {targetSlot}/{ContainerSize}");
             return false; // must be in equipment slot range
         }
 
@@ -175,14 +175,14 @@ public class EquipmentContainer : ItemContainer
             slotTypeId = EquipmentItemSlotType.Backpack;
         else
         {
-            _log.Warn($"{Owner?.Name} ({OwnerId}) tried to equip a non-equipable item {item.Template.Name} ({item.TemplateId}), Id:{item.Id}");
+            Logger.Warn($"{Owner?.Name} ({OwnerId}) tried to equip a non-equipable item {item.Template.Name} ({item.TemplateId}), Id:{item.Id}");
             return false; // must be a equip-able item
         }
 
         // No expected slot was defined, we can't accept that here
         if (slotTypeId == (EquipmentItemSlotType)255)
         {
-            _log.Fatal($"{Owner?.Name} ({OwnerId}) tried to equip a equippable item that has no slot defined {item.Template.Name} ({item.TemplateId}), Id:{item.Id}, TargetSlot:{(EquipmentItemSlot)targetSlot}");
+            Logger.Fatal($"{Owner?.Name} ({OwnerId}) tried to equip a equippable item that has no slot defined {item.Template.Name} ({item.TemplateId}), Id:{item.Id}, TargetSlot:{(EquipmentItemSlot)targetSlot}");
             return false;
         }
 
@@ -191,7 +191,7 @@ public class EquipmentContainer : ItemContainer
 
         if (!allowedSlots.Contains(equipSlot))
         {
-            _log.Warn($"{Owner?.Name} ({OwnerId}) tried to equip a item in the wrong slot {item.Template.Name} ({item.TemplateId}), Id:{item.Id}, SlotType: {equipSlot}, TargetSlot:{(EquipmentItemSlot)targetSlot}");
+            Logger.Warn($"{Owner?.Name} ({OwnerId}) tried to equip a item in the wrong slot {item.Template.Name} ({item.TemplateId}), Id:{item.Id}, SlotType: {equipSlot}, TargetSlot:{(EquipmentItemSlot)targetSlot}");
             return false; // not in the list of allowed slots, remove the item
         }
 

@@ -22,16 +22,23 @@ public class DoodadFuncFinal : DoodadPhaseFuncTemplate
     public override bool Use(BaseUnit caster, Doodad owner)
     {
         if (caster is Character)
-            _log.Debug("DoodadFuncFinal: After {0}, Respawn {1}, MinTime {2}, MaxTime {3}, ShowTip {4}, ShowEndTime {5}, Tip {6}", After, Respawn, MinTime, MaxTime, ShowTip, ShowEndTime, Tip);
+            Logger.Debug("DoodadFuncFinal: After {0}, Respawn {1}, MinTime {2}, MaxTime {3}, ShowTip {4}, ShowEndTime {5}, Tip {6}", After, Respawn, MinTime, MaxTime, ShowTip, ShowEndTime, Tip);
         else
-            _log.Trace("DoodadFuncFinal: After {0}, Respawn {1}, MinTime {2}, MaxTime {3}, ShowTip {4}, ShowEndTime {5}, Tip {6}", After, Respawn, MinTime, MaxTime, ShowTip, ShowEndTime, Tip);
+            Logger.Trace("DoodadFuncFinal: After {0}, Respawn {1}, MinTime {2}, MaxTime {3}, ShowTip {4}, ShowEndTime {5}, Tip {6}", After, Respawn, MinTime, MaxTime, ShowTip, ShowEndTime, Tip);
 
         var delay = Rand.Next(MinTime, MaxTime);
 
         if (After > 0)
         {
+            var afterTimerDelay = (uint)After;
+            if (owner.OverridePhaseTime > DateTime.MinValue)
+            {
+                owner.PhaseTime = owner.OverridePhaseTime;
+                owner.OverridePhaseTime = DateTime.MinValue;
+                afterTimerDelay = owner.TimeLeft;
+            }
             owner.FuncTask = new DoodadFuncFinalTask(caster, owner, 0, Respawn, delay);
-            TaskManager.Instance.Schedule(owner.FuncTask, TimeSpan.FromMilliseconds(After)); // After ms remove the object from visibility
+            TaskManager.Instance.Schedule(owner.FuncTask, TimeSpan.FromMilliseconds(afterTimerDelay)); // After ms remove the object from visibility
         }
         else
         {

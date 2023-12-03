@@ -6,7 +6,7 @@ namespace AAEmu.Game.Core.Packets.G2C;
 public class SCSkillEndedPacket : GamePacket
 {
     public override PacketLogLevel LogLevel => PacketLogLevel.Trace;
-    
+
     private readonly ushort _tlId;
 
     public SCSkillEndedPacket(ushort tlId) : base(SCOffsets.SCSkillEndedPacket, 1)
@@ -18,5 +18,10 @@ public class SCSkillEndedPacket : GamePacket
     {
         stream.Write(_tlId);
         return stream;
+    }
+
+    public override string Verbose()
+    {
+        return $" - {_tlId}";
     }
 }

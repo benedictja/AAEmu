@@ -1,5 +1,6 @@
 ﻿using System;
 
+using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj;
@@ -20,16 +21,16 @@ public class InteractionEffect : EffectTemplate
         CastAction castObj, EffectSource source, SkillObject skillObject, DateTime time,
         CompressedGamePackets packetBuilder = null)
     {
-        _log.Debug("InteractionEffect, {0}", WorldInteraction);
+        Logger.Debug("InteractionEffect, {0}", WorldInteraction);
 
         var classType = Type.GetType("AAEmu.Game.Models.Game.World.Interactions." + WorldInteraction);
         if (classType == null)
         {
-            _log.Error("InteractionEffect, Unknown world interaction: {0}", WorldInteraction);
+            Logger.Error("InteractionEffect, Unknown world interaction: {0}", WorldInteraction);
             return;
         }
 
-        _log.Debug("InteractionEffect, Action: {0}", classType); // TODO help to debug...
+        Logger.Debug("InteractionEffect, Action: {0}", classType); // TODO help to debug...
 
         caster.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.Interaction);
 
@@ -40,9 +41,12 @@ public class InteractionEffect : EffectTemplate
         }
 
         if (caster is not Character character) { return; }
-        if (target is Doodad)
+        if (target is Doodad doodad)
         {
-            character.Quests.OnInteraction(WorldInteraction, target);
+            //character.Quests.OnInteraction(WorldInteraction, target);
+            // инициируем событие
+            //Task.Run(() => QuestManager.Instance.DoInteractionEvents((Character)caster, target.TemplateId));
+            QuestManager.Instance.DoInteractionEvents((Character)caster, target.TemplateId);
         }
     }
 }

@@ -5,6 +5,7 @@ public enum BuffConstants : uint
     ArmorBuffTag = 145,
     EquipmentBuffTag = 156,
     Untouchable = 545,
+    NpcReturn = 550, // NPC returning home
     Cloth4P = 713,
     Cloth7P = 714,
     Leather4P = 715,
@@ -27,6 +28,6 @@ public enum BuffConstants : uint
     EquipShield = 8226,
     EquipTwoHanded = 8227,
     InBeautySalon = 6117,
-    NpcReturn = 550, // TODO: Find
-    SearchSchoolOfFish = 5736
+    SearchSchoolOfFish = 5736,
+    Overburdened = 7221 // SustainBuff - Carrying heavy objects reduces movement speed and prevents teleporting or gliding.
 }

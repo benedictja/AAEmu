@@ -25,11 +25,11 @@ public class CSSendChatMessagePacket : GamePacket
         var languageType = stream.ReadByte();
         var ability = stream.ReadInt32();
 
-        _log.Debug(message);
+        Logger.Debug(message);
 
         if (message.StartsWith(CommandManager.CommandPrefix))
         {
-            if (CommandManager.Instance.Handle(Connection.ActiveChar, message.Substring(CommandManager.CommandPrefix.Length).Trim()))
+            if (CommandManager.Instance.Handle(Connection.ActiveChar, message.Substring(CommandManager.CommandPrefix.Length).Trim(), out _))
                 return;
         }
 
@@ -125,7 +125,7 @@ public class CSSendChatMessagePacket : GamePacket
                 ChatManager.Instance.GetFactionChat(Connection.ActiveChar.Faction.MotherId).SendMessage(Connection.ActiveChar, message, ability, languageType);
                 break;
             default:
-                _log.Warn("Unsupported chat type {0} from {1}", type, Connection.ActiveChar.Name);
+                Logger.Warn("Unsupported chat type {0} from {1}", type, Connection.ActiveChar.Name);
                 break;
         }
     }

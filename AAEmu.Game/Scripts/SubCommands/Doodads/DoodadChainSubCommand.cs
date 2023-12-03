@@ -3,6 +3,7 @@ using System.Drawing;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Models.Game.Char;
+using AAEmu.Game.Utils.Scripts;
 using AAEmu.Game.Utils.Scripts.SubCommands;
 
 namespace AAEmu.Game.Scripts.SubCommands.Doodads;
@@ -17,51 +18,51 @@ public class DoodadChainSubCommand : SubCommandBase
         AddParameter(new NumericSubCommandParameter<uint>("templateId", "Template Id", true));
     }
 
-    public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters)
+    public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters, IMessageOutput messageOutput)
     {
         uint templateId = parameters["templateId"];
         var doodad = DoodadManager.Instance.Create(0, templateId);
         if (doodad == null)
         {
-            SendColorMessage(character, Color.Red, "Doodad with templateId {0} was not found |r", templateId);
+            SendColorMessage(messageOutput, Color.Red, "Doodad with templateId {0} was not found |r", templateId);
             return;
         }
 
-        SendMessage(character, "Phase chain, see the log");
-        _log.Warn($"{Title} Chain: TemplateId {templateId}");
+        SendMessage(messageOutput, "Phase chain, see the log");
+        Logger.Warn($"{Title} Chain: TemplateId {templateId}");
 
         var doodadFuncGroups = DoodadManager.Instance.GetDoodadFuncGroups(templateId);
         foreach (var doodadFuncGroup in doodadFuncGroups)
         {
             // Display all functions that are available
             doodad.FuncGroupId = doodadFuncGroup.Id;
-            _log.Info($"{Title} FuncGroupId: {doodad.FuncGroupId}");
+            Logger.Info($"{Title} FuncGroupId: {doodad.FuncGroupId}");
             // Get all doodad_phase_funcs
             var phaseFuncs = DoodadManager.Instance.GetPhaseFunc(doodad.FuncGroupId);
-            if (phaseFuncs.Length == 0)
+            if (phaseFuncs.Count == 0)
             {
-                _log.Info($"{Title} PhaseFunc: GroupId {0}, FuncId 0", doodad.FuncGroupId);
+                Logger.Info($"{Title} PhaseFunc: GroupId {0}, FuncId 0", doodad.FuncGroupId);
             }
             else
             {
                 foreach (var phaseFunc in phaseFuncs)
                 {
                     // phaseFunc.Use
-                    _log.Info($"{Title} PhaseFunc: GroupId {0}, FuncId {1}, FuncType {2}", phaseFunc.GroupId, phaseFunc.FuncId, phaseFunc.FuncType);
+                    Logger.Info($"{Title} PhaseFunc: GroupId {0}, FuncId {1}, FuncType {2}", phaseFunc.GroupId, phaseFunc.FuncId, phaseFunc.FuncType);
                 }
             }
             // Get all doodad_funcs
             var doodadFuncs = DoodadManager.Instance.GetDoodadFuncs(doodad.FuncGroupId);
             if (doodadFuncs.Count == 0)
             {
-                _log.Info($"{Title} Func: GroupId {0}, FuncId 0", doodad.FuncGroupId);
+                Logger.Info($"{Title} Func: GroupId {0}, FuncId 0", doodad.FuncGroupId);
             }
             else
             {
                 foreach (var func in doodadFuncs)
                 {
                     // func.Use
-                    _log.Info($"{Title} Func: GroupId {0}, FuncId {1}, FuncType {2}, NextPhase {3}, Skill {4}", func.GroupId, func.FuncId, func.FuncType, func.NextPhase, func.SkillId);
+                    Logger.Info($"{Title} Func: GroupId {0}, FuncId {1}, FuncType {2}, NextPhase {3}, Skill {4}", func.GroupId, func.FuncId, func.FuncType, func.NextPhase, func.SkillId);
                 }
             }
         }

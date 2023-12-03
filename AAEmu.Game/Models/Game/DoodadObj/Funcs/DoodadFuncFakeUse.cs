@@ -17,9 +17,9 @@ public class DoodadFuncFakeUse : DoodadFuncTemplate
     public override void Use(BaseUnit caster, Doodad owner, uint skillId, int nextPhase = 0)
     {
         if (caster is Character)
-            _log.Debug("DoodadFuncFakeUse: skillId {0}, nextPhase {1},  SkillId {2}, FakeSkillId {3}, TargetParent {4}", skillId, nextPhase, SkillId, FakeSkillId, TargetParent);
+            Logger.Debug("DoodadFuncFakeUse: skillId {0}, nextPhase {1},  SkillId {2}, FakeSkillId {3}, TargetParent {4}", skillId, nextPhase, SkillId, FakeSkillId, TargetParent);
         else
-            _log.Trace("DoodadFuncFakeUse: skillId {0}, nextPhase {1},  SkillId {2}, FakeSkillId {3}, TargetParent {4}", skillId, nextPhase, SkillId, FakeSkillId, TargetParent);
+            Logger.Trace("DoodadFuncFakeUse: skillId {0}, nextPhase {1},  SkillId {2}, FakeSkillId {3}, TargetParent {4}", skillId, nextPhase, SkillId, FakeSkillId, TargetParent);
 
         if (caster == null)
         {
@@ -37,7 +37,7 @@ public class DoodadFuncFakeUse : DoodadFuncTemplate
             {
                 //target owner/doodad
                 target = SkillCastTarget.GetByType(SkillCastTargetType.Doodad);
-                target.ObjId = owner.ObjId;
+                target.ObjId = owner.ParentObjId;
             }
 
             var skill = new Skill(SkillManager.Instance.GetSkillTemplate(SkillId));
@@ -46,15 +46,6 @@ public class DoodadFuncFakeUse : DoodadFuncTemplate
         }
         else if (FakeSkillId != 0)
         {
-            var transferTelescope = 20580;
-            var range = 1000f;
-            if (FakeSkillId == transferTelescope && caster is Character character)
-            {
-                owner.BroadcastPacket(new SCTransferTelescopeToggledPacket(true, range), true);
-                TransferTelescopeManager.Instance.TransferTelescopeStart(character);
-                owner.ToNextPhase = false;
-            }
-
             if (FakeSkillId == skillId && nextPhase > 0)
             {
                 owner.ToNextPhase = true;

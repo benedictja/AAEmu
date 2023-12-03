@@ -72,7 +72,7 @@ public class DamageEffect : EffectTemplate
         CastAction castObj, EffectSource source, SkillObject skillObject, DateTime time,
         CompressedGamePackets packetBuilder = null)
     {
-        _log.Trace("DamageEffect");
+        Logger.Trace("DamageEffect");
 
         var trg = target as Unit;
         if (trg == null || trg.Hp <= 0)
@@ -302,11 +302,11 @@ public class DamageEffect : EffectTemplate
             finalDamage *= TargetBuffBonusMul;
         }
 
-        //toughness reduction (PVP Only)
+        // Toughness reduction (PVP Only)
         if (caster is Character && trg is Character)
             finalDamage *= 1 - trg.BattleResist / (8000f + trg.BattleResist);
 
-        //Do Critical Dmgs
+        // Do Critical Dmgs
         switch (hitType)
         {
             case SkillHitType.MeleeCritical:
@@ -355,9 +355,10 @@ public class DamageEffect : EffectTemplate
         var healthStolen = (int)(value * (HealthStealRatio / 100.0f));
         var manaStolen = (int)(value * (ManaStealRatio / 100.0f));
 
-        //Safeguard to prevent accidental flagging
+        // Safeguard to prevent accidental flagging
         if (!caster.CanAttack(trg))
             return;
+
         trg.ReduceCurrentHp(caster, value);
         ((Unit)caster).SummarizeDamage += value;
 
@@ -384,27 +385,29 @@ public class DamageEffect : EffectTemplate
 
         // TODO : Use proper chance kinds (melee, magic etc.)
         var trgCharacter = trg as Character;
-        var attacker = caster as Character;
-        if (trgCharacter != null)
-        {
-            //trgCharacter.IsInCombat = true;
-            trgCharacter.LastCombatActivity = DateTime.UtcNow;
-            if (attacker != null)
-            {
-                trgCharacter.SetHostileActivity(attacker);
-            }
-            trgCharacter.Procs.RollProcsForKind(ProcChanceKind.TakeDamageAny);
-        }
-        if (attacker != null)
-        {
-            //attacker.IsInCombat = true;
-            attacker.LastCombatActivity = DateTime.UtcNow;
-            attacker.Procs.RollProcsForKind(ProcChanceKind.HitAny);
-        }
+        var attacker = caster as Unit;
 
         // set for all combatants, for RegenTick
         trg.IsInBattle = true;
-        ((Unit)caster).IsInBattle = true;
+        trg.LastCombatActivity = DateTime.UtcNow;
+
+        if (trgCharacter != null)
+        {
+            //trgCharacter.IsInBattle = true;
+            //trgCharacter.LastCombatActivity = DateTime.UtcNow;
+            if (attacker is Character attackerCharacter)
+            {
+                trgCharacter.SetHostileActivity(attackerCharacter);
+            }
+            trgCharacter.Procs?.RollProcsForKind(ProcChanceKind.TakeDamageAny);
+        }
+
+        if (attacker != null)
+        {
+            attacker.IsInBattle = true;
+            attacker.LastCombatActivity = DateTime.UtcNow;
+            attacker.Procs?.RollProcsForKind(ProcChanceKind.HitAny);
+        }
 
         // TODO: Gotta figure out how to tell if it should be applied on getting hit, or on hitting
         caster.CombatBuffs.TriggerCombatBuffs((Unit)caster, target as Unit, hitType, false);

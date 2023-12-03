@@ -3,6 +3,8 @@ using AAEmu.Game.Core.Network.Game;
 
 namespace AAEmu.Game.Core.Packets.C2G;
 
+#pragma warning disable IDE0052 // Remove unread private members
+
 public class CSStartQuestContextPacket : GamePacket
 {
     private uint _questContextId;
@@ -20,6 +22,6 @@ public class CSStartQuestContextPacket : GamePacket
         _doodadObjId = stream.ReadBc();        // doodadObjId
         _sphereId = stream.ReadUInt32();       // selected
 
-        Connection.ActiveChar.Quests.Add(_questContextId);
+        Connection.ActiveChar.Quests.Add(_questContextId, false, _npcObjId, _doodadObjId, _sphereId);
     }
 }

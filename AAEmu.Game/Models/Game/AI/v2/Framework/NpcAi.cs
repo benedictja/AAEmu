@@ -5,7 +5,9 @@ using System.Linq;
 using AAEmu.Game.Models.Game.AI.AStar;
 using AAEmu.Game.Models.Game.AI.v2.Params;
 using AAEmu.Game.Models.Game.NPChar;
+using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.World.Transform;
+using AAEmu.Game.Models.StaticValues;
 using NLog;
 
 namespace AAEmu.Game.Models.Game.AI.v2.Framework;
@@ -15,7 +17,7 @@ namespace AAEmu.Game.Models.Game.AI.v2.Framework;
 /// </summary>
 public abstract class NpcAi
 {
-    private Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
     // Test
     public bool ShouldTick { get; set; }
@@ -50,7 +52,7 @@ public abstract class NpcAi
     {
         foreach (var transition in _transitions.Values.SelectMany(transitions => transitions.Where(transition => !_behaviors.ContainsKey(transition.Kind))))
         {
-            _log.Error("Transition is invalid. Type {0} missing, while used in transition on {1}",
+            Logger.Error("Transition is invalid. Type {0} missing, while used in transition on {1}",
                 transition.Kind.GetType().Name, transition.On);
         }
     }
@@ -74,7 +76,7 @@ public abstract class NpcAi
 
     private void SetCurrentBehavior(Behavior behavior)
     {
-        //_log.Trace($"Npc {Owner.Name}:{Owner.ObjId} leaving behavior {_currentBehavior?.GetType().Name ?? "none"}, Entering behavior {behavior?.GetType().Name ?? "none"}");
+        //Logger.Trace($"Npc {Owner.Name}:{Owner.ObjId} leaving behavior {_currentBehavior?.GetType().Name ?? "none"}, Entering behavior {behavior?.GetType().Name ?? "none"}");
         _currentBehavior?.Exit();
         _currentBehavior = behavior;
         _currentBehavior?.Enter();
@@ -84,11 +86,11 @@ public abstract class NpcAi
     {
         if (!_behaviors.ContainsKey(kind))
         {
-            _log.Trace($"Trying to set Npc {Owner.Name}:{Owner.ObjId} current behavior, but it is not valid. Missing behavior: {kind}");
+            Logger.Trace($"Trying to set Npc {Owner.Name}:{Owner.ObjId} current behavior, but it is not valid. Missing behavior: {kind}");
             return;
         }
 
-        //_log.Trace($"Set Npc {Owner.Name}:{Owner.ObjId} current behavior: {kind}");
+        //Logger.Trace($"Set Npc {Owner.Name}:{Owner.ObjId} current behavior: {kind}");
         SetCurrentBehavior(_behaviors[kind]);
     }
 
@@ -107,6 +109,26 @@ public abstract class NpcAi
         if (Owner?.Region?.HasPlayerActivity() ?? false)
         {
             _currentBehavior?.Tick(delta);
+
+            // If aggro table is populated, check if current aggro targets need to be cleared
+            if (Owner?.AggroTable.Count <= 0)
+            {
+                OnNoAggroTarget();
+                return;
+            }
+
+            var toRemove = new List<Unit>();
+            foreach (var (id, aggro) in Owner.AggroTable)
+                if (aggro.Owner.Buffs.CheckBuffTag((uint)TagsEnum.NoFight) ||
+                    aggro.Owner.Buffs.CheckBuffTag((uint)TagsEnum.Returning) ||
+                    !Owner.CanAttack(aggro.Owner))
+                    toRemove.Add(aggro.Owner);
+
+            if (toRemove.Count <= 0)
+                return;
+
+            foreach (var unitToRemove in toRemove)
+                Owner.ClearAggroOfUnit(unitToRemove);
         }
     }
 

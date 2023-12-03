@@ -1,5 +1,5 @@
+﻿using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Quests.Templates;
-using AAEmu.Game.Models.Game.Char;
 
 namespace AAEmu.Game.Models.Game.Quests.Acts;
 
@@ -20,7 +20,7 @@ public class QuestActObjAggro : QuestActTemplate
 
     public override bool Use(ICharacter character, Quest quest, int objective)
     {
-        _log.Warn("QuestActObjAggro");
-        return false;
+        Logger.Warn("QuestActObjAggro");
+        return true;
     }
 }

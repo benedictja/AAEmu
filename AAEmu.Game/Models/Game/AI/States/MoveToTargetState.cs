@@ -13,25 +13,25 @@ public class MoveToTargetState : State
 
     public override void Enter()
     {
-        _log.Debug("Entering MoveToTargetState - {0}", Target.Name);
+        Logger.Debug("Entering MoveToTargetState - {0}", Target.Name);
         PreviousDistance = MathUtil.CalculateDistance(AI.Owner, Target, true);
     }
 
     public override void Tick(TimeSpan delta)
     {
-        if (!(AI.Owner is Npc npc))
+        if (AI.Owner is not Npc npc)
             return;
 
         // if (PreviousDistance > AI.Params.CombatRange)
         if (PreviousDistance > 2.5f)
         {
-            npc.MoveTowards(Target.Transform.World.Position, 3.4f * (delta.Milliseconds / 1000.0f));
+            npc.MoveTowards(Target.Transform.World.Position, npc.BaseMoveSpeed * (delta.Milliseconds / 1000.0f));
         }
         else
         {
             // Send NPC stop movement packet
             npc.StopMovement();
-            // Go in combat 
+            // Go in combat
         }
 
         PreviousDistance = MathUtil.CalculateDistance(AI.Owner, Target, true);

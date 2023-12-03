@@ -3,14 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
-
-using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.AI.AStar;
 using AAEmu.Game.Models.Game.AI.v2.Framework;
+using AAEmu.Game.Models.Game.Skills.SkillControllers;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Utils;
-
-using static AAEmu.Game.Models.Game.Skills.SkillControllers.SkillController;
 
 namespace AAEmu.Game.Models.Game.AI.v2.Behaviors;
 
@@ -18,13 +15,9 @@ public abstract class BaseCombatBehavior : Behavior
 {
     protected bool _strafeDuringDelay;
 
-    private const int decreaseMoveSpeed = 161;
-    private const int shackle = 160;
-    private const int snare = 27;
-
     public void MoveInRange(BaseUnit target, TimeSpan delta)
     {
-        if (Ai == null || Ai.Owner == null)
+        if (Ai?.Owner == null)
             return;
 
         if (Ai.Owner.Buffs.HasEffectsMatchingCondition(e =>
@@ -37,20 +30,13 @@ public abstract class BaseCombatBehavior : Behavior
             return;
         }
 
-        if ((Ai.Owner.ActiveSkillController?.State ?? SCState.Ended) == SCState.Running)
+        if ((Ai.Owner.ActiveSkillController?.State ?? SkillController.SCState.Ended) == SkillController.SCState.Running)
             return;
 
-        if (Ai.Owner.Buffs.CheckBuffs(SkillManager.Instance.GetBuffsByTagId(shackle)) ||
-            Ai.Owner.Buffs.CheckBuffs(SkillManager.Instance.GetBuffsByTagId(decreaseMoveSpeed)) ||
-            Ai.Owner.Buffs.CheckBuffs(SkillManager.Instance.GetBuffsByTagId(snare)))
-        {
-            return;
-        }
-
-        //Ai.Owner.Template.AttackStartRangeScale * 4, 
+        //Ai.Owner.Template.AttackStartRangeScale * 4,
         //var range = 2f;// Ai.Owner.Template.AttackStartRangeScale * 6;
         var range = Ai.Owner.Template.AttackStartRangeScale;
-        var speed = 5.4f * (delta.Milliseconds / 1000.0f);
+        var speed = Ai.Owner.BaseMoveSpeed * (delta.Milliseconds / 1000.0f);
         var distanceToTarget = Ai.Owner.GetDistanceTo(target, true);
 
         // TODO найдем путь к abuser, только если координаты цели изменились
@@ -65,7 +51,7 @@ public abstract class BaseCombatBehavior : Behavior
                 stopWatch.Stop();
                 // Toss warning if it took a long time
                 if (stopWatch.Elapsed.Ticks >= TimeSpan.TicksPerMillisecond)
-                    _log.Warn($"FindPath took {stopWatch.Elapsed} for Ai.Owner.ObjId:{Ai.Owner.ObjId}, Owner.TemplateId {Ai.Owner.TemplateId}");
+                    Logger.Warn($"FindPath took {stopWatch.Elapsed} for Ai.Owner.ObjId:{Ai.Owner.ObjId}, Owner.TemplateId {Ai.Owner.TemplateId}");
                 // запомним новые координаты цели
                 Ai.PathNode.pos2 = new Point(target.Transform.World.Position.X, target.Transform.World.Position.Y, target.Transform.World.Position.Z);
             }
@@ -138,7 +124,7 @@ public abstract class BaseCombatBehavior : Behavior
         {
             if (IsUsingSkill)
                 return false;
-            if ((Ai.Owner?.ActiveSkillController?.State ?? SCState.Ended) == SCState.Running)
+            if ((Ai.Owner?.ActiveSkillController?.State ?? SkillController.SCState.Ended) == SkillController.SCState.Running)
                 return false;
             if (Ai.Owner != null && Ai.Owner.Buffs.HasEffectsMatchingCondition(e => e.Template.Stun || e.Template.Sleep || e.Template.Silence))
                 return false;

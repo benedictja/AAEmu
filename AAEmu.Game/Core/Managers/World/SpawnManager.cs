@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+
 using AAEmu.Commons.Exceptions;
 using AAEmu.Commons.IO;
 using AAEmu.Commons.Utils;
@@ -29,7 +30,7 @@ namespace AAEmu.Game.Core.Managers.World;
 
 public class SpawnManager : Singleton<SpawnManager>
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private bool _loaded;
 
     private bool _work = true;
@@ -83,13 +84,13 @@ public class SpawnManager : Singleton<SpawnManager>
 
     internal void SpawnAllNpcs(byte worldId)
     {
-        _log.Info("Spawning {0} NPC spawners in world {1}", _npcSpawners[worldId].Count, worldId);
+        Logger.Info("Spawning {0} NPC spawners in world {1}", _npcSpawners[worldId].Count, worldId);
         var count = 0;
         foreach (var spawner in _npcSpawners[worldId].Values)
         {
             if (spawner[0].Template == null)
             {
-                _log.Warn("Templates not found for Npc templateId {0} in world {1}", spawner[0].UnitId, worldId);
+                Logger.Warn("Templates not found for Npc templateId {0} in world {1}", spawner[0].UnitId, worldId);
             }
             else
             {
@@ -97,11 +98,11 @@ public class SpawnManager : Singleton<SpawnManager>
                 count++;
                 if (count % 5000 == 0 && worldId == 0)
                 {
-                    _log.Info("{0} NPC spawners spawned...", count);
+                    Logger.Info("{0} NPC spawners spawned...", count);
                 }
             }
         }
-        _log.Info("{0} NPC spawners spawned...", count);
+        Logger.Info("{0} NPC spawners spawned...", count);
     }
 
     public void Load()
@@ -130,7 +131,7 @@ public class SpawnManager : Singleton<SpawnManager>
             _slaveSpawners.Add((byte)world.Id, new Dictionary<uint, SlaveSpawner>());
         }
 
-        _log.Info("Loading spawns...");
+        Logger.Info("Loading spawns...");
         foreach (var world in worlds)
         {
             var doodadSpawners = new Dictionary<uint, DoodadSpawner>();
@@ -144,14 +145,14 @@ public class SpawnManager : Singleton<SpawnManager>
 
             if (!File.Exists(jsonFileName))
             {
-                _log.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
+                Logger.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
             }
             else
             {
                 var contents = FileManager.GetFileContents(jsonFileName);
 
                 if (string.IsNullOrWhiteSpace(contents))
-                    _log.Warn($"File {jsonFileName} is empty.");
+                    Logger.Warn($"File {jsonFileName} is empty.");
                 else
                 {
                     if (JsonHelper.TryDeserializeObject(contents, out List<NpcSpawner> npcSpawnersFromFile, out _))
@@ -162,7 +163,7 @@ public class SpawnManager : Singleton<SpawnManager>
                             entry++;
                             if (!NpcManager.Instance.Exist(npcSpawnerFromFile.UnitId))
                             {
-                                _log.Warn($"Npc Template {npcSpawnerFromFile.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
+                                Logger.Warn($"Npc Template {npcSpawnerFromFile.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
                                 continue; // TODO ... so mb warn here?
                             }
 
@@ -187,14 +188,14 @@ public class SpawnManager : Singleton<SpawnManager>
 
             if (!File.Exists(jsonFileName))
             {
-                _log.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
+                Logger.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
             }
             else
             {
                 var contents = FileManager.GetFileContents(jsonFileName);
 
                 if (string.IsNullOrWhiteSpace(contents))
-                    _log.Warn($"File {jsonFileName} is empty.");
+                    Logger.Warn($"File {jsonFileName} is empty.");
                 else
                 {
                     if (JsonHelper.TryDeserializeObject(contents, out List<DoodadSpawner> spawners, out _))
@@ -205,7 +206,7 @@ public class SpawnManager : Singleton<SpawnManager>
                             entry++;
                             if (!DoodadManager.Instance.Exist(spawner.UnitId))
                             {
-                                _log.Warn($"Doodad Template {spawner.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
+                                Logger.Warn($"Doodad Template {spawner.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
                                 continue; // TODO ... so mb warn here?
                             }
                             spawner.Id = _nextId;
@@ -232,7 +233,7 @@ public class SpawnManager : Singleton<SpawnManager>
 
             if (!File.Exists(jsonFileName))
             {
-                _log.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
+                Logger.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
             }
             else
             {
@@ -240,7 +241,7 @@ public class SpawnManager : Singleton<SpawnManager>
 
                 if (string.IsNullOrWhiteSpace(contents))
                 {
-                    _log.Warn($"File {jsonFileName} doesn't exists or is empty.");
+                    Logger.Warn($"File {jsonFileName} doesn't exists or is empty.");
                 }
                 else
                 {
@@ -252,7 +253,7 @@ public class SpawnManager : Singleton<SpawnManager>
                             entry++;
                             if (!TransferManager.Instance.Exist(spawner.UnitId))
                             {
-                                _log.Warn($"Transfer Template {spawner.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
+                                Logger.Warn($"Transfer Template {spawner.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
                                 continue; // TODO ... so mb warn here?
                             }
                             spawner.Id = _nextId;
@@ -281,7 +282,7 @@ public class SpawnManager : Singleton<SpawnManager>
 
             if (!File.Exists(jsonFileName))
             {
-                _log.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
+                Logger.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
             }
             else
             {
@@ -289,7 +290,7 @@ public class SpawnManager : Singleton<SpawnManager>
 
                 if (string.IsNullOrWhiteSpace(contents))
                 {
-                    _log.Warn($"File {jsonFileName} doesn't exists or is empty.");
+                    Logger.Warn($"File {jsonFileName} doesn't exists or is empty.");
                 }
                 else
                 {
@@ -301,7 +302,7 @@ public class SpawnManager : Singleton<SpawnManager>
                             entry++;
                             if (!GimmickManager.Instance.Exist(spawner.UnitId))
                             {
-                                _log.Warn($"Gimmick Template {spawner.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
+                                Logger.Warn($"Gimmick Template {spawner.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
                                 continue; // TODO ... so mb warn here?
                             }
                             spawner.Id = _nextId;
@@ -326,7 +327,7 @@ public class SpawnManager : Singleton<SpawnManager>
 
             if (!File.Exists(jsonFileName))
             {
-                _log.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
+                Logger.Info($"World  {world.Name}  is missing  {Path.GetFileName(jsonFileName)}");
             }
             else
             {
@@ -334,7 +335,7 @@ public class SpawnManager : Singleton<SpawnManager>
 
                 if (string.IsNullOrWhiteSpace(contents))
                 {
-                    _log.Warn($"File {jsonFileName} doesn't exists or is empty.");
+                    Logger.Warn($"File {jsonFileName} doesn't exists or is empty.");
                 }
                 else
                 {
@@ -346,7 +347,7 @@ public class SpawnManager : Singleton<SpawnManager>
                             entry++;
                             if (!SlaveManager.Instance.Exist(spawner.UnitId))
                             {
-                                _log.Warn($"Slave Template {spawner.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
+                                Logger.Warn($"Slave Template {spawner.UnitId} (file entry {entry}) doesn't exist - {jsonFileName}");
                                 continue; // TODO ... so mb warn here?
                             }
                             spawner.Id = _nextId;
@@ -371,130 +372,184 @@ public class SpawnManager : Singleton<SpawnManager>
             _slaveSpawners[(byte)world.Id] = slaveSpawners;
         }
 
-        _log.Info("Loading persistent doodads...");
-        List<Doodad> newCoffers = new List<Doodad>();
-        using (var connection = MySQL.CreateConnection())
-        {
-            using (var command = connection.CreateCommand())
-            {
-                // Sorting required to make make sure parenting doesn't produce invalid parents (normally)
-                command.CommandText = "SELECT * FROM doodads ORDER BY `plant_time` ASC";
-                command.Prepare();
-                using (var reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        var templateId = reader.GetUInt32("template_id");
-                        var dbId = reader.GetUInt32("id");
-                        var phaseId = reader.GetUInt32("current_phase_id");
-                        var x = reader.GetFloat("x");
-                        var y = reader.GetFloat("y");
-                        var z = reader.GetFloat("z");
-                        var plantTime = reader.GetDateTime("plant_time");
-                        var growthTime = reader.GetDateTime("growth_time");
-                        // var phaseTime = reader.GetDateTime("phase_time"); // Not used
-                        var ownerId = reader.GetUInt32("owner_id");
-                        var ownerType = (DoodadOwnerType)reader.GetByte("owner_type");
-                        var itemId = reader.GetUInt64("item_id");
-                        var houseId = reader.GetUInt32("house_id");
-                        var parentDoodad = reader.GetUInt32("parent_doodad");
-                        var itemTemplateId = reader.GetUInt32("item_template_id");
-                        var itemContainerId = reader.GetUInt64("item_container_id");
-                        var data = reader.GetInt32("data");
+        Logger.Info("Loading persistent doodads...");
 
-                        var doodad = DoodadManager.Instance.Create(0, templateId);
-
-                        doodad.Spawner = new DoodadSpawner();
-                        doodad.Spawner.UnitId = templateId;
-                        doodad.DbId = dbId;
-                        doodad.FuncGroupId = phaseId;
-                        doodad.OwnerId = ownerId;
-                        doodad.OwnerType = ownerType;
-                        doodad.AttachPoint = AttachPointKind.None;
-                        doodad.PlantTime = plantTime;
-                        doodad.GrowthTime = growthTime;
-                        doodad.ItemId = itemId;
-                        doodad.DbHouseId = houseId;
-                        // Try to grab info from the actual item if it still exists
-                        var sourceItem = ItemManager.Instance.GetItemByItemId(itemId);
-                        doodad.ItemTemplateId = sourceItem?.TemplateId ?? itemTemplateId;
-                        // Grab Ucc from it's old source item
-                        doodad.UccId = sourceItem?.UccId ?? 0;
-                        doodad.SetData(data); // Directly assigning to Data property would trigger a .Save()
-
-                        doodad.Transform.Local.SetPosition(x, y, z);
-                        doodad.Transform.Local.SetRotation(reader.GetFloat("roll"), reader.GetFloat("pitch"), reader.GetFloat("yaw"));
-
-                        // Apparently this is only a reference value, so might not actually need to parent it
-                        if (parentDoodad > 0)
-                        {
-                            // var pDoodad = WorldManager.Instance.GetDoodadByDbId(parentDoodad);
-                            var pDoodad = _playerDoodads.FirstOrDefault(d => d.DbId == parentDoodad);
-                            if (pDoodad == null)
-                            {
-                                _log.Warn($"Unable to place doodad {dbId} can't find it's parent doodad {parentDoodad}");
-                            }
-                            else
-                            {
-                                //doodad.Transform.Parent = pDoodad.Transform;
-                                //doodad.ParentObj = pDoodad;
-                                //doodad.ParentObjId = pDoodad.ObjId;
-                            }
-                        }
-
-                        if (houseId > 0)
-                        {
-                            var owningHouse = HousingManager.Instance.GetHouseById(doodad.DbHouseId);
-                            if (owningHouse == null)
-                            {
-                                _log.Warn($"Unable to place doodad {dbId} can't find it's owning house {houseId}");
-                            }
-                            else
-                            {
-                                doodad.Transform.Parent = owningHouse.Transform;
-                                doodad.ParentObj = owningHouse;
-                                doodad.ParentObjId = owningHouse.ObjId;
-                            }
-                        }
-
-                        // Attach ItemContainer to coffer if needed
-                        if (doodad is DoodadCoffer coffer)
-                        {
-                            if (itemContainerId > 0)
-                            {
-                                var itemContainer = ItemManager.Instance.GetItemContainerByDbId(itemContainerId);
-                                if (itemContainer is CofferContainer cofferContainer)
-                                    coffer.ItemContainer = cofferContainer;
-                                else
-                                    _log.Error($"Unable to attach ItemContainer {itemContainerId} to DoodadCoffer, objId: {doodad.ObjId}, DbId: {doodad.DbId}");
-                            }
-                            else
-                            {
-                                _log.Warn($"DoodadCoffer has no persistent ItemContainer assigned to it, creating new one, objId: {doodad.ObjId}, DbId: {doodad.DbId}");
-                                coffer.InitializeCoffer(ownerId);
-                                newCoffers.Add(coffer); // Mark for saving again later when we're done with this loop
-                            }
-                        }
-
-                        _playerDoodads.Add(doodad);
-                    }
-                }
-            }
-        }
+        var doodadsSpawned = 0;
+        // Load furniture
+        doodadsSpawned += SpawnPersistentDoodads(DoodadOwnerType.Housing);
+        // Load plants/packs and everything else that was placed into the world by players
+        doodadsSpawned += SpawnPersistentDoodads(DoodadOwnerType.System);
+        doodadsSpawned += SpawnPersistentDoodads(DoodadOwnerType.Character);
+        Logger.Info($"{doodadsSpawned} doodads loaded.");
 
         var respawnThread = new Thread(CheckRespawns) { Name = "RespawnThread" };
         respawnThread.Start();
 
+        _loaded = true;
+    }
+
+    /// <summary>
+    /// Load Persistent Doodads from the DataBase
+    /// </summary>
+    /// <param name="ownerTypeToSpawn">Only spawn doodads that have this ownerType</param>
+    /// <param name="ownerToSpawnId">Only spawn doodads with a specific ownerId, -1 for all doodads of the given ownerType</param>
+    /// <param name="useParentObject">If not null, force-set the Parent object of the loaded data</param>
+    /// <param name="doSpawn">If true, also sends a Spawn() command after loading the doodad</param>
+    /// <returns></returns>
+    public int SpawnPersistentDoodads(DoodadOwnerType ownerTypeToSpawn, int ownerToSpawnId = -1, GameObject useParentObject = null, bool doSpawn = false)
+    {
+        var spawnCount = 0;
+        var newCoffers = new List<Doodad>();
+        using var connection = MySQL.CreateConnection();
+        using (var command = connection.CreateCommand())
+        {
+            // Sorting required to make make sure parenting doesn't produce invalid parents (normally)
+
+            command.CommandText = "SELECT * FROM doodads  WHERE owner_type = @OwnerType";
+            if (ownerToSpawnId >= 0)
+                command.CommandText += " AND house_id = @OwnerId";
+            command.CommandText += " ORDER BY `plant_time`";
+            command.Parameters.AddWithValue("OwnerType", (byte)ownerTypeToSpawn);
+            if (ownerToSpawnId >= 0)
+                command.Parameters.AddWithValue("OwnerId", ownerToSpawnId);
+            command.Prepare();
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var templateId = reader.GetUInt32("template_id");
+                    var dbId = reader.GetUInt32("id");
+                    var phaseId = reader.GetUInt32("current_phase_id");
+                    var x = reader.GetFloat("x");
+                    var y = reader.GetFloat("y");
+                    var z = reader.GetFloat("z");
+                    var roll = reader.GetFloat("roll");
+                    var pitch = reader.GetFloat("pitch");
+                    var yaw = reader.GetFloat("yaw");
+                    var scale = reader.GetFloat("scale");
+                    var plantTime = reader.GetDateTime("plant_time");
+                    var growthTime = reader.GetDateTime("growth_time");
+                    var phaseTime = reader.GetDateTime("phase_time");
+                    var ownerId = reader.GetUInt32("owner_id");
+                    var ownerType = (DoodadOwnerType)reader.GetByte("owner_type");
+                    var attachPoint = (AttachPointKind)reader.GetUInt32("attach_point");
+                    var itemId = reader.GetUInt64("item_id");
+                    var houseId = reader.GetUInt32("house_id"); // actually DbId of the parent/owner (house, slave, etc)
+                    var parentDoodad = reader.GetUInt32("parent_doodad");
+                    var itemTemplateId = reader.GetUInt32("item_template_id");
+                    var itemContainerId = reader.GetUInt64("item_container_id");
+                    var data = reader.GetInt32("data");
+
+                    var doodad = DoodadManager.Instance.Create(0, templateId, null, true);
+
+                    //doodad.Spawner = new DoodadSpawner();
+                    //doodad.Spawner.UnitId = templateId;
+                    doodad.IsPersistent = true;
+                    doodad.DbId = dbId;
+                    doodad.FuncGroupId = phaseId;
+                    doodad.OwnerId = ownerId;
+                    doodad.OwnerType = ownerType;
+                    doodad.AttachPoint = attachPoint;
+                    doodad.PlantTime = plantTime;
+                    doodad.GrowthTime = growthTime;
+                    doodad.OverridePhaseTime = phaseTime;
+                    doodad.PhaseTime = phaseTime;
+                    doodad.ItemId = itemId;
+                    doodad.OwnerDbId = houseId;
+                    doodad.SetScale(scale != 0f ? scale : 1f);
+                    // Try to grab info from the actual item if it still exists
+                    var sourceItem = ItemManager.Instance.GetItemByItemId(itemId);
+                    doodad.ItemTemplateId = sourceItem?.TemplateId ?? itemTemplateId;
+                    // Grab Ucc from it's old source item
+                    doodad.UccId = sourceItem?.UccId ?? 0;
+                    doodad.SetData(data); // Directly assigning to Data property would trigger a .Save()
+
+                    // Apparently this is only a reference value, so might not actually need to parent it
+                    if (parentDoodad > 0)
+                    {
+                        // var pDoodad = WorldManager.Instance.GetDoodadByDbId(parentDoodad);
+                        var pDoodad = _playerDoodads.FirstOrDefault(d => d.DbId == parentDoodad);
+                        if (pDoodad == null)
+                        {
+                            Logger.Warn($"Unable to place doodad {dbId} can't find it's parent doodad {parentDoodad}");
+                        }
+                        else
+                        {
+                            doodad.Transform.Parent = pDoodad.Transform;
+                            doodad.ParentObj = pDoodad;
+                            doodad.ParentObjId = pDoodad.ObjId;
+                        }
+                    }
+
+                    if ((houseId > 0) && (doodad.ParentObjId <= 0))
+                    {
+                        var owningHouse = HousingManager.Instance.GetHouseById(doodad.OwnerDbId);
+                        if (owningHouse == null)
+                        {
+                            Logger.Warn($"Unable to place doodad {dbId} can't find it's owning house {houseId}");
+                        }
+                        else
+                        {
+                            doodad.Transform.Parent = owningHouse.Transform;
+                            doodad.ParentObj = owningHouse;
+                            doodad.ParentObjId = owningHouse.ObjId;
+                        }
+                    }
+
+                    if (useParentObject != null)
+                    {
+                        doodad.ParentObj = useParentObject;
+                        doodad.ParentObjId = useParentObject.ObjId;
+                        doodad.Transform.Parent = useParentObject.Transform;
+                    }
+
+                    doodad.Transform.Local.SetPosition(x, y, z);
+                    doodad.Transform.Local.SetRotation(roll, pitch, yaw);
+
+                    // Attach ItemContainer to coffer if needed
+                    if (doodad is DoodadCoffer coffer)
+                    {
+                        if (itemContainerId > 0)
+                        {
+                            var itemContainer = ItemManager.Instance.GetItemContainerByDbId(itemContainerId);
+                            if (itemContainer is CofferContainer cofferContainer)
+                                coffer.ItemContainer = cofferContainer;
+                            else
+                                Logger.Error($"Unable to attach ItemContainer {itemContainerId} to DoodadCoffer, objId: {doodad.ObjId}, DbId: {doodad.DbId}");
+                        }
+                        else
+                        {
+                            Logger.Warn($"DoodadCoffer has no persistent ItemContainer assigned to it, creating new one, objId: {doodad.ObjId}, DbId: {doodad.DbId}");
+                            coffer.InitializeCoffer(ownerId);
+                            newCoffers.Add(coffer); // Mark for saving again later when we're done with this loop
+                        }
+                    }
+
+                    if ((ownerTypeToSpawn == DoodadOwnerType.Slave) && (useParentObject is Slave parentSlave))
+                    {
+                        parentSlave.AttachedDoodads.Add(doodad);
+                    }
+
+                    doodad.InitDoodad();
+
+                    _playerDoodads.Add(doodad);
+                    spawnCount++;
+
+                    if (doSpawn)
+                        doodad.Spawn();
+                }
+            }
+        }
         // Save Coffer Doodads that had a new ItemContainer created for them (should only happen on first run if there were already coffers placed)
         foreach (var coffer in newCoffers)
             coffer.Save();
 
-        _loaded = true;
+        return spawnCount;
     }
 
     public void SpawnAll()
     {
-        _log.Info("Spawning NPCs...");
+        Logger.Info("Spawning NPCs...");
         foreach (var (worldId, worldSpawners) in _npcSpawners)
         {
             Task.Run(() =>
@@ -503,12 +558,12 @@ public class SpawnManager : Singleton<SpawnManager>
             });
         }
 
-        _log.Info("Spawning Doodads...");
+        Logger.Info("Spawning Doodads...");
         foreach (var (worldId, worldSpawners) in _doodadSpawners)
         {
             Task.Run(() =>
             {
-                _log.Info("Spawning {0} Doodads in world {1}", worldSpawners.Count, worldId);
+                Logger.Info("Spawning {0} Doodads in world {1}", worldSpawners.Count, worldId);
                 var count = 0;
                 foreach (var spawner in worldSpawners.Values)
                 {
@@ -516,22 +571,22 @@ public class SpawnManager : Singleton<SpawnManager>
                     count++;
                     if (count % 1000 == 0 && worldId == 0)
                     {
-                        _log.Info("{0} Doodads spawned", count);
+                        Logger.Info("{0} Doodads spawned", count);
                     }
                 }
-                _log.Info("{0} Doodads spawned", count);
+                Logger.Info("{0} Doodads spawned", count);
 
                 // необходимо дождаться спавна всех doodads
                 FishSchoolManager.Instance.Load(worldId);
             });
         }
 
-        _log.Info("Spawning Transfers...");
+        Logger.Info("Spawning Transfers...");
         foreach (var (worldId, worldSpawners) in _transferSpawners)
         {
             Task.Run(() =>
             {
-                _log.Info("Spawning {0} Transfers in world {1}", worldSpawners.Count, worldId);
+                Logger.Info("Spawning {0} Transfers in world {1}", worldSpawners.Count, worldId);
                 var count = 0;
                 foreach (var spawner in worldSpawners.Values)
                 {
@@ -539,19 +594,19 @@ public class SpawnManager : Singleton<SpawnManager>
                     count++;
                     if (count % 10 == 0 && worldId == 0)
                     {
-                        _log.Info("{0} Transfers spawned...", count);
+                        Logger.Info("{0} Transfers spawned...", count);
                     }
                 }
-                _log.Info("{0} Transfers spawned...", count);
+                Logger.Info("{0} Transfers spawned...", count);
             });
         }
 
-        _log.Info("Spawning Gimmicks...");
+        Logger.Info("Spawning Gimmicks...");
         foreach (var (worldId, worldSpawners) in _gimmickSpawners)
         {
             Task.Run(() =>
             {
-                _log.Info("Spawning {0} Gimmicks in world {1}", worldSpawners.Count, worldId);
+                Logger.Info("Spawning {0} Gimmicks in world {1}", worldSpawners.Count, worldId);
                 var count = 0;
                 foreach (var spawner in worldSpawners.Values)
                 {
@@ -559,19 +614,19 @@ public class SpawnManager : Singleton<SpawnManager>
                     count++;
                     if (count % 5 == 0 && worldId == 0)
                     {
-                        _log.Info("{0} Gimmicks spawned...", count);
+                        Logger.Info("{0} Gimmicks spawned...", count);
                     }
                 }
-                _log.Info("{0} Gimmicks spawned...", count);
+                Logger.Info("{0} Gimmicks spawned...", count);
             });
         }
 
-        _log.Info("Spawning Slaves...");
+        Logger.Info("Spawning Slaves...");
         foreach (var (worldId, worldSpawners) in _slaveSpawners)
         {
             Task.Run(() =>
             {
-                _log.Info("Spawning {0} Slaves in world {1}", worldSpawners.Count, worldId);
+                Logger.Info("Spawning {0} Slaves in world {1}", worldSpawners.Count, worldId);
                 var count = 0;
                 foreach (var spawner in worldSpawners.Values)
                 {
@@ -579,21 +634,26 @@ public class SpawnManager : Singleton<SpawnManager>
                     count++;
                     if (count % 5 == 0 && worldId == 0)
                     {
-                        _log.Info("{0} Slaves spawned...", count);
+                        Logger.Info("{0} Slaves spawned...", count);
                     }
                 }
-                _log.Info("{0} Slaves spawned...", count);
+                Logger.Info("{0} Slaves spawned...", count);
             });
         }
 
-        _log.Info("Spawning Player Doodads asynchronously...");
+        Logger.Info("Spawning Player Doodads asynchronously...");
         Task.Run(() =>
         {
             foreach (var doodad in _playerDoodads)
             {
-                if (doodad.Spawner.Spawn(doodad.ObjId) == null)
+                if (doodad.Spawner == null)
                 {
                     doodad.Spawn();
+                }
+                else
+                {
+                    if (doodad.Spawner?.Spawn(doodad.ObjId) == null)
+                        Logger.Error($"Failed to spawn player doodad DbId:{doodad.DbId}, TemplateId: {doodad.TemplateId}");
                 }
             }
         });

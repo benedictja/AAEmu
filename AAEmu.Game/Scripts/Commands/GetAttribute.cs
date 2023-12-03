@@ -5,6 +5,7 @@ using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.Chat;
 using AAEmu.Game.Models.Game.Units;
+using AAEmu.Game.Utils.Scripts;
 
 namespace AAEmu.Game.Scripts.Commands;
 
@@ -18,22 +19,22 @@ public class GetAttribute : ICommand
 
     public string GetCommandLineHelp()
     {
-        return "<attrId || attrName> [target]";
+        return "[target] <attrId || attrName || all || used>";
     }
 
     public string GetCommandHelpText()
     {
-        return "getattribute <attrId || attrName> [target]";
+        return "getattribute " + GetCommandLineHelp();
     }
 
-    public void Execute(Character character, string[] args)
+    public void Execute(Character character, string[] args, IMessageOutput messageOutput)
     {
         Unit target = character;
         int argsIdx = 0;
 
         if (args.Length == 0)
         {
-            character.SendMessage("[GetAttribute] " + CommandManager.CommandPrefix + "getattribute <attrId || attrName> [target]");
+            character.SendMessage("[GetAttribute] " + CommandManager.CommandPrefix + GetCommandHelpText());
             return;
         }
 
@@ -48,12 +49,28 @@ public class GetAttribute : ICommand
             argsIdx++;
         }
 
+        character.SendPacket(new SCChatMessagePacket(ChatType.System, $"[GetAttribute] Stats for target {target.Name} ({target.ObjId})"));
+
         if (args[argsIdx].ToLower() == "all")
         {
             foreach (var attr in Enum.GetValues(typeof(UnitAttribute)))
             {
-                string value = target.GetAttribute((UnitAttribute)attr);
+                var value = target.GetAttribute((UnitAttribute)attr);
                 character.SendPacket(new SCChatMessagePacket(ChatType.System, $"{(UnitAttribute)attr}: {value}"));
+            }
+        }
+        else if (args[argsIdx].ToLower() == "used")
+        {
+            foreach (var attr in Enum.GetValues(typeof(UnitAttribute)))
+            {
+                var value = target.GetAttribute((UnitAttribute)attr);
+                var hide = (value == "NotFound") || (value == "0");
+                // Exception for multipliers
+                if ((value != "NotFound") && ((UnitAttribute)attr).ToString().Contains("Mul"))
+                    hide = (value == "1");
+
+                if (!hide)
+                    character.SendPacket(new SCChatMessagePacket(ChatType.System, $"{(UnitAttribute)attr}: {value}"));
             }
         }
         else if (byte.TryParse(args[argsIdx], out byte attrId))
