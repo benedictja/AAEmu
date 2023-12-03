@@ -8,6 +8,7 @@ using AAEmu.Commons.IO;
 using AAEmu.Commons.Utils.DB;
 using AAEmu.Game.Models;
 using AAEmu.Game.Services;
+using AAEmu.Game.Services.WebApi;
 using AAEmu.Game.Utils.DB;
 using AAEmu.Game.Utils.Scripts;
 using Microsoft.CodeAnalysis.Scripting;
@@ -21,7 +22,7 @@ namespace AAEmu.Game;
 
 public static class Program
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private static Thread _thread = Thread.CurrentThread;
     private static DateTime _startTime;
     private static string Name => Assembly.GetExecutingAssembly().GetName().Name;
@@ -38,17 +39,17 @@ public static class Program
 
         if (args.Length > 0 && args[0] == "compiler-check")
         {
-            _log.Info("Check compilation");
+            Logger.Info("Check compilation");
             var result = ScriptCompiler.CompileScriptsWithAllDependencies(out _, out var diagnostics);
 
             if (result)
             {
-                _log.Info("Compilation successful");
+                Logger.Info("Compilation successful");
                 return 0;
             }
             else
             {
-                _log.Error(new CompilationErrorException("Compilation failed", diagnostics), "Compilation failed");
+                Logger.Error(new CompilationErrorException("Compilation failed", diagnostics), "Compilation failed");
                 return 1;
             }
         }
@@ -71,7 +72,7 @@ public static class Program
         }
         catch (Exception ex)
         {
-            _log.Fatal(ex, "MySQL connection failed, check your configuration!");
+            Logger.Fatal(ex, "MySQL connection failed, check your configuration!");
             LogManager.Flush();
             return 1;
         }
@@ -83,7 +84,7 @@ public static class Program
         }
         catch (Exception ex)
         {
-            _log.Fatal(ex, "Failed to load compact.sqlite3 database check if it exists!");
+            Logger.Fatal(ex, "Failed to load compact.sqlite3 database check if it exists!");
             LogManager.Flush();
             return 1;
         }
@@ -114,14 +115,14 @@ public static class Program
         }
         catch (OperationCanceledException ocex)
         {
-            _log.Fatal(ocex.Message);
+            Logger.Fatal(ocex.Message);
         }
         return 0;
     }
 
     private static void Initialization()
     {
-        _log.Info($"{Name} version {Version}");
+        Logger.Info($"{Name} version {Version}");
         _thread.Name = "AA.Game Base Thread";
         _startTime = DateTime.UtcNow;
     }
@@ -131,12 +132,31 @@ public static class Program
         var mainConfig = Path.Combine(FileManager.AppPath, "Config.json");
         if (!File.Exists(mainConfig))
         {
-            _log.Fatal($"{mainConfig} doesn't exist!");
-            return false;
+            // If user secrets are defined the configuration file is not required
+            var isUserSecretsDefined = IsUserSecretsDefined();
+            if (!isUserSecretsDefined)
+            {
+                Logger.Fatal($"{mainConfig} doesn't exist!");
+                return false;
+            }
+
+            //return false;
+            mainConfig = null;
         }
 
         Configuration(_launchArgs, mainConfig);
         return true;
+    }
+
+    private static bool IsUserSecretsDefined()
+    {
+        // Check if user secrets are defined
+        var config = new ConfigurationBuilder()
+            .AddUserSecrets<GameService>()
+            .Build();
+
+        bool userSecretsDefined = config.AsEnumerable().Any();
+        return userSecretsDefined;
     }
 
     private static void Configuration(string[] args, string mainConfigJson)
@@ -150,15 +170,21 @@ public static class Program
         var configFiles = Directory.GetFiles(Path.Combine(FileManager.AppPath, "Configurations"), "*.json", SearchOption.AllDirectories).ToList();
         configFiles.Sort();
         // Add the old main Config.json file
-        configFiles.Insert(0, mainConfigJson);
+        if (mainConfigJson != null)
+        {
+            configFiles.Insert(0, mainConfigJson);
+        }
 
         var configurationBuilder = new ConfigurationBuilder();
+
         // Add config json files
         foreach (var file in configFiles)
         {
-            _log.Info($"Config: {file}");
+            Logger.Info($"Config: {file}");
             configurationBuilder.AddJsonFile(file);
         }
+
+        configurationBuilder.AddUserSecrets<GameService>();
 
         // Add command-line arguments
         configurationBuilder.AddCommandLine(args);
@@ -170,6 +196,6 @@ public static class Program
     private static void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
         var exceptionStr = e.ExceptionObject.ToString();
-        _log.Fatal(exceptionStr);
+        Logger.Fatal(exceptionStr);
     }
 }

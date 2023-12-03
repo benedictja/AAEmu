@@ -15,14 +15,6 @@ using MySql.Data.MySqlClient;
 
 namespace AAEmu.Game.Models.Game.Housing;
 
-public enum HousingPermission : byte
-{
-    Private = 0,
-    Guild = 1,
-    Public = 2,
-    Family = 3
-}
-
 public sealed class House : Unit
 {
     public override UnitTypeFlag TypeFlag { get; } = UnitTypeFlag.Housing;
@@ -80,11 +72,13 @@ public sealed class House : Unit
             {
                 foreach (var bindingDoodad in Template.HousingBindingDoodad)
                 {
-                    var doodad = DoodadManager.Instance.Create(0, bindingDoodad.DoodadId, this);
+                    var doodad = DoodadManager.Instance.Create(0, bindingDoodad.DoodadId, this, true);
                     doodad.AttachPoint = bindingDoodad.AttachPointId;
-                    doodad.Transform.Parent = this.Transform;
-                    doodad.Transform.ApplyWorldSpawnPosition(bindingDoodad.Position);
                     doodad.ParentObj = this;
+                    doodad.Transform = this.Transform.CloneDetached(doodad);
+                    doodad.Transform.Parent = this.Transform;
+                    doodad.Transform.Local.ApplyWorldSpawnPositionWithDeg(bindingDoodad.Position);
+                    doodad.InitDoodad();
 
                     AttachedDoodads.Add(doodad);
                 }
@@ -318,7 +312,7 @@ public sealed class House : Unit
 
     public void OnDeath(object sender, EventArgs args)
     {
-        Log.Debug("House died ObjId:{0} - TemplateId:{1} - {2}", ObjId, TemplateId, Name);
+        Logger.Debug("House died ObjId:{0} - TemplateId:{1} - {2}", ObjId, TemplateId, Name);
         HousingManager.Instance.RemoveDeadHouse(this);
     }
 

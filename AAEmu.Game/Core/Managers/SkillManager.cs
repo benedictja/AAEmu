@@ -18,7 +18,7 @@ namespace AAEmu.Game.Core.Managers;
 
 public class SkillManager : Singleton<SkillManager>, ISkillManager
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private bool _loaded = false;
 
     private Dictionary<uint, SkillTemplate> _skills;
@@ -38,12 +38,14 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
     private Dictionary<uint, List<CombatBuffTemplate>> _combatBuffs;
     private Dictionary<uint, SkillReagent> _skillReagents;
     private Dictionary<uint, SkillProduct> _skillProducts;
-    private HashSet<ushort> _skillIds = new();
-    private ushort _skillIdIndex = 1;
+    // private HashSet<ushort> _skillIds = new();
+    // private ushort _skillIdIndex = 1;
 
     //Events
     public event EventHandler OnSkillsLoaded;
 
+    /*
+    // Replaced with SkillTlIdManager 
     public ushort NextId()
     {
         lock (_skillIds)
@@ -71,6 +73,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
             _skillIds.Remove(id);
         }
     }
+    */
 
     public SkillTemplate GetSkillTemplate(uint id)
     {
@@ -124,7 +127,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
         {
             var type = _types[id];
 
-            _log.Trace("Get Effect Template: type = {0}, id = {1}", type.Type, type.ActualId);
+            Logger.Trace("Get Effect Template: type = {0}, id = {1}", type.Type, type.ActualId);
 
             if (_effects.TryGetValue(type.Type, out var effect))
             {
@@ -132,7 +135,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
             }
             else
             {
-                _log.Warn("No such Effect Type[{0}] found.", type.Type);
+                Logger.Warn("No such Effect Type[{0}] found.", type.Type);
                 return null;
             }
         }
@@ -141,7 +144,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
 
     public EffectTemplate GetEffectTemplate(uint id, string type)
     {
-        _log.Trace("Get Effect Template: type = {0}, id = {1}", type, id);
+        Logger.Trace("Get Effect Template: type = {0}, id = {1}", type, id);
 
         if (_effects.TryGetValue(type, out var value))
         {
@@ -300,7 +303,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
 
         using (var connection = SQLite.CreateConnection())
         {
-            _log.Info("Loading skills...");
+            Logger.Info("Loading skills...");
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = "SELECT * FROM skills";
@@ -425,7 +428,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                 }
             }
 
-            _log.Info("Loaded {0} skills", _skills.Count);
+            Logger.Info("Loaded {0} skills", _skills.Count);
 
             using (var command = connection.CreateCommand())
             {
@@ -471,7 +474,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                 }
             }
 
-            _log.Info("Loading skill effects/buffs...");
+            Logger.Info("Loading skill effects/buffs...");
 
             using (var command = connection.CreateCommand())
             {
@@ -639,7 +642,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                         template.ScaleDuration = reader.GetFloat("scaleDuration");
                         template.ImmuneExceptCreator = reader.GetBoolean("immune_except_creator", true);
                         template.ImmuneExceptSkillTagId = reader.GetUInt32("immune_except_skill_tag_id", 0);
-                        template.FindSchoolOrFishRange = reader.GetFloat("find_school_of_fish_range");
+                        template.FindSchoolOfFishRange = reader.GetFloat("find_school_of_fish_range");
                         template.AnimActionId = reader.GetUInt32("anim_action_id", 0);
                         template.DeadApplicable = reader.GetBoolean("dead_applicable", true);
                         template.TickAreaUseOriginSource = reader.GetBoolean("tick_area_use_origin_source", true);
@@ -1673,7 +1676,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                 }
             }
 
-            _log.Info("Skill effects loaded");
+            Logger.Info("Skill effects loaded");
 
             _buffTriggers = new Dictionary<uint, List<BuffTriggerTemplate>>();
             using (var command = connection.CreateCommand())
@@ -1708,7 +1711,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                     }
                 }
             }
-            _log.Info("Buff triggers loaded");
+            Logger.Info("Buff triggers loaded");
 
             using (var command = connection.CreateCommand())
             {
@@ -1730,7 +1733,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                     }
                 }
             }
-            _log.Info("Skill Reagents loaded");
+            Logger.Info("Skill Reagents loaded");
 
             using (var command = connection.CreateCommand())
             {
@@ -1751,7 +1754,7 @@ public class SkillManager : Singleton<SkillManager>, ISkillManager
                         _skillProducts.Add(template.Id, template);
                     }
                 }
-                _log.Info("Skill Products loaded");
+                Logger.Info("Skill Products loaded");
 
                 OnSkillsLoaded?.Invoke(this, new EventArgs());
             }

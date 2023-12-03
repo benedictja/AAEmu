@@ -2,6 +2,7 @@
 using System.Linq;
 using AAEmu.Game.Core.Managers;
 using AAEmu.Game.Models.Game.AI.v2.Params.WildBoar;
+using AAEmu.Game.Models.Game.Models;
 using AAEmu.Game.Models.Game.Skills;
 
 namespace AAEmu.Game.Models.Game.AI.v2.Behaviors.WildBoar;
@@ -14,7 +15,7 @@ public class WildBoatAttackBehavior : BaseCombatBehavior
     // },
 
     private WildBoarAiParams _aiParams;
-    private float _prevHealthRatio;
+    //unused private float _prevHealthRatio;
 
     public override void Enter()
     {
@@ -22,13 +23,16 @@ public class WildBoatAttackBehavior : BaseCombatBehavior
         if (_aiParams == null)
             return;
 
-        _prevHealthRatio = (Ai.Owner.Hp / (float)Ai.Owner.MaxHp) * 100;
+        //unused _prevHealthRatio = (Ai.Owner.Hp / (float)Ai.Owner.MaxHp) * 100;
 
         if (!UpdateTarget() || ShouldReturn)
         {
             Ai.GoToReturn();
             return;
         }
+
+        Ai.Owner.CurrentGameStance = GameStanceType.Combat;
+
         // On Combat Start Skill
         var startCombatSkillId = _aiParams.OnCombatStartSkills.FirstOrDefault();
         if (startCombatSkillId == 0)

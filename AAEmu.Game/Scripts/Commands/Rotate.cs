@@ -6,12 +6,13 @@ using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Utils;
 using AAEmu.Commons.Utils;
 using NLog;
+using AAEmu.Game.Utils.Scripts;
 
 namespace AAEmu.Game.Scripts.Commands;
 
 public class Rotate : ICommand
 {
-    protected static Logger _log = LogManager.GetCurrentClassLogger();
+    protected static Logger Logger = LogManager.GetCurrentClassLogger();
     public void OnLoad()
     {
         CommandManager.Instance.Register("rotate", this);
@@ -27,7 +28,7 @@ public class Rotate : ICommand
         return "Rotate target unit towards you, or set it's local rotation to a given angle";
     }
 
-    public void Execute(Character character, string[] args)
+    public void Execute(Character character, string[] args, IMessageOutput messageOutput)
     {
         //if (args.Length < 2)
         //{

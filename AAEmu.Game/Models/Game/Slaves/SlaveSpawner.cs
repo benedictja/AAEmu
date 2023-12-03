@@ -11,13 +11,14 @@ namespace AAEmu.Game.Models.Game.Slaves;
 
 public class SlaveSpawner : Spawner<Slave>
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
     private List<Slave> _spawned;
     public Slave _lastSpawn;
     private int _scheduledCount;
     private int _spawnCount;
     public uint Count { get; set; } = 1;
+    public uint WorldId { get; set; }
 
     public SlaveSpawner()
     {
@@ -66,19 +67,19 @@ public class SlaveSpawner : Spawner<Slave>
 
     private void DoSpawn()
     {
-        var slave = SlaveManager.Instance.Create(this);
+        var slave = SlaveManager.Instance.Create(null, this, 0);
         if (slave == null)
         {
-            _log.Warn("Slave {0}, from spawn not exist at db", UnitId);
+            Logger.Warn("Slave {0}, from spawn not exist at db", UnitId);
             return;
         }
 
         slave.Spawner = this;
-        //slave.Transform.ApplyWorldSpawnPosition(Position);
+        // slave.Transform.ApplyWorldSpawnPosition(Position);
 
         if (slave.Transform.World.IsOrigin())
         {
-            _log.Error("Can't spawn slave {1} from spawn {0}", Id, UnitId);
+            Logger.Error("Can't spawn slave {1} from spawn {0}", Id, UnitId);
             return;
         }
 

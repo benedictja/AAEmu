@@ -23,12 +23,15 @@ public class RemoveDoodad : SpecialEffectAction
         int value4)
     {
         // TODO ...
-        if (caster is Character) { _log.Debug("Special effects: RemoveDoodad value1 {0}, value2 {1}, value3 {2}, value4 {3}", value1, value2, value3, value4); }
+        if (caster is Character) { Logger.Debug("Special effects: RemoveDoodad value1 {0}, value2 {1}, value3 {2}, value4 {3}", value1, value2, value3, value4); }
 
         var doodads = WorldManager.GetAround<Doodad>(caster, 10f);
         if (doodads != null)
             foreach (var doodad in doodads)
                 if (doodad.TemplateId == value1)
+                {
+                    doodad.Delete();
                     doodad.BroadcastPacket(new SCDoodadRemovedPacket(doodad.ObjId), false);
+                }
     }
 }

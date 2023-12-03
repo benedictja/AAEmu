@@ -8,10 +8,8 @@ using AAEmu.Game.Models.Game.Items.Templates;
 using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Effects;
-
+using AAEmu.Game.Models.Game.Units.Static;
 using MySql.Data.MySqlClient;
-
-using NLog;
 
 namespace AAEmu.Game.Models.Game.Char;
 
@@ -23,8 +21,6 @@ public class CharacterMates
      * FINISH ATTRIBUTES
      * NAME FROM LOCALIZED TABLE
      */
-
-    protected static Logger _log = LogManager.GetCurrentClassLogger();
 
     public Character Owner { get; set; }
 
@@ -55,7 +51,7 @@ public class CharacterMates
             Name = LocalizationManager.Instance.Get("npcs", "name", npctemplate.Id, npctemplate.Name), // npctemplate.Name,
             Owner = Owner.Id,
             Mileage = 0,
-            Xp = ExpirienceManager.Instance.GetExpForLevel(npctemplate.Level, true),
+            Xp = ExperienceManager.Instance.GetExpForLevel(npctemplate.Level, true),
             Hp = 9999,
             Mp = 9999,
             UpdatedAt = DateTime.UtcNow,
@@ -130,8 +126,9 @@ public class CharacterMates
         mount.Mp = Math.Min(mount.Mp, mount.MaxMp);
 
         mount.Transform.Local.AddDistanceToFront(3f);
-        //_log.Warn($"Spawn the pet:{mount.ObjId} X={mount.Transform.World.Position.X} Y={mount.Transform.World.Position.Y}");
+        //Logger.Warn($"Spawn the pet:{mount.ObjId} X={mount.Transform.World.Position.X} Y={mount.Transform.World.Position.Y}");
         MateManager.Instance.AddActiveMateAndSpawn(Owner, mount, item);
+        mount.PostUpdateCurrentHp(mount, 0, mount.Hp, KillReason.Unknown);
     }
 
     public void DespawnMate(uint tlId)

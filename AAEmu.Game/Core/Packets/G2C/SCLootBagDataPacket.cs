@@ -5,7 +5,7 @@ using AAEmu.Game.Models.Game.Items;
 
 namespace AAEmu.Game.Core.Packets.G2C;
 
-class SCLootBagDataPacket : GamePacket
+public class SCLootBagDataPacket : GamePacket
 {
     private readonly List<Item> _items;
     private readonly bool _lootAll;
@@ -21,20 +21,7 @@ class SCLootBagDataPacket : GamePacket
         stream.Write((byte)_items.Count);
 
         foreach (var item in _items)
-        {
-            stream.Write(item.TemplateId);
-            stream.Write(item.Id);
-            stream.Write(item.Grade);
-            stream.Write((byte)0);
-            stream.Write(item.Count);
-            stream.Write((byte)item.DetailType);
-            stream.Write(item.CreateTime);
-            stream.Write(item.LifespanMins);
-            stream.Write(item.MadeUnitId);
-            stream.Write(item.WorldId);
-            stream.Write(item.UnsecureTime);
-            stream.Write(item.UnpackTime);
-        }
+            item.Write(stream);
 
         stream.Write(_lootAll);
         return stream;

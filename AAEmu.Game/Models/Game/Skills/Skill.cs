@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 
 using AAEmu.Commons.Utils;
 using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers.Id;
 using AAEmu.Game.Core.Managers.UnitManagers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets;
@@ -35,7 +36,7 @@ namespace AAEmu.Game.Models.Game.Skills;
 
 public class Skill
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
     public uint Id { get; set; }
     public SkillTemplate Template { get; set; }
@@ -69,10 +70,14 @@ public class Skill
 
     public SkillResult Use(BaseUnit caster, SkillCaster casterCaster, SkillCastTarget targetCaster, SkillObject skillObject = null, bool bypassGcd = false)
     {
+        // Check if the source is a actual Unit
         if (caster is not Unit unit)
         {
             return SkillResult.InvalidSource;
         }
+
+        // Cast character for future reference
+        var character = caster as Character;
 
         unit.ConditionChance = true;
 
@@ -82,11 +87,11 @@ public class Skill
             lock (unit.GCDLock)
             {
                 // Commented out the line to eliminate the hanging of the skill
-                // TODO added for quest Id = 886 - скилл срабатывает часто, что не дает работать квесту - крысы не появляются
+                // TODO: added for quest Id = 886 - скилл срабатывает часто, что не дает работать квесту - крысы не появляются
                 var delay = 150;
                 if (Id == 2 || Id == 3 || Id == 4)
                 {
-                    delay = caster is Character ? 500 : 1500;
+                    delay = character != null ? 500 : 1500;
                 }
 
                 if (unit.SkillLastUsed.AddMilliseconds(delay) > DateTime.UtcNow)
@@ -94,7 +99,7 @@ public class Skill
                     // Will delay for 150 Milliseconds to eliminate the hanging of the skill
                     if (!caster.CheckInterval(delay))
                     {
-                        _log.Trace($"Skill: CooldownTime [{delay}]!");
+                        Logger.Trace($"Skill: CooldownTime [{delay}]!");
                         return SkillResult.CooldownTime;
                     }
                 }
@@ -105,7 +110,7 @@ public class Skill
                     // Will delay for 50 Milliseconds to eliminate the hanging of the skill
                     if (!caster.CheckInterval(delay))
                     {
-                        _log.Trace($"Skill: CooldownTime [{delay}]!");
+                        Logger.Trace($"Skill: CooldownTime [{delay}]!");
                         return SkillResult.CooldownTime;
                     }
                 }
@@ -114,6 +119,7 @@ public class Skill
             }
         }
 
+        // Cancel buffs if Template asks for it
         if (Template.CancelOngoingBuffs)
         {
             if (caster is Units.Mate)
@@ -121,24 +127,39 @@ public class Skill
             caster.Buffs.TriggerRemoveOn(Buffs.BuffRemoveOn.StartSkill, Template.CancelOngoingBuffExceptionTagId);
         }
 
+        // Create a new skillObject if needed
         skillObject ??= new SkillObject();
 
+        // Grab current target
         var target = GetInitialTarget(caster, casterCaster, targetCaster);
         InitialTarget = target;
         if (target == null)
         {
-            _log.Trace("Skill: SkillResult.NoTarget!");
+            if (caster is Npc npc)
+            {
+                npc.Ai.OnNoAggroTarget();
+            }
+            Logger.Debug($"Skill: SkillResult.NoTarget! - Skill {Template.Id}, Caster {caster.Name} ({caster.ObjId})");
             return SkillResult.NoTarget; // We should try to make sure this doesnt happen, but can happen with NPC skills
         }
 
-        TlId = SkillManager.Instance.NextId();
-
-        if (caster is Character character && character.IsRiding && Template.Unmount)
+        // Unmount character if skill asks for it
+        if (character is { IsRiding: true } && Template.Unmount)
         {
             var mate = MateManager.Instance.GetActiveMate(character.ObjId);
             MateManager.Instance.UnMountMate(character, mate.TlId, AttachPointKind.Driver, AttachUnitReason.None);
         }
 
+        // Check initial mana cost
+        if (ManaCost(unit) > unit.Mp)
+            return SkillResult.LackMana;
+
+        // Get a TlId for this skill
+        TlId = SkillTlIdManager.GetNextId(caster);
+        // if (caster is Character)
+        Logger.Trace($"Created SkillTlId {TlId} for Skill {Template.Id}, Caster {caster.Name} ({caster.TemplateId}:{caster.ObjId}) with target {target.Name} ({target.TemplateId}:{target.ObjId})");
+
+        // If skill uses Plots, then start the plot
         if (Template.Plot != null)
         {
             Task.Run(() => Template.Plot.Run(caster, casterCaster, target, targetCaster, skillObject, this));
@@ -146,16 +167,17 @@ public class Skill
                 return SkillResult.Success;
         }
 
+        // Check if target is within range
         var skillRange = caster.ApplySkillModifiers(this, SkillAttribute.Range, Template.MaxRange);
         var targetDist = unit.GetDistanceTo(target, true);
-        if (!(target is Doodad)) // HACKFIX : Used mostly for boats, since the actual position of the doodad is the boat's origin, and not where it is displayed
-        {
-            if (targetDist < Template.MinRange)
-                return SkillResult.TooCloseRange;
-            if (targetDist > skillRange)
-                return SkillResult.TooFarRange;
-        }
 
+        var minRangeCheck = Template.MinRange * 1.0;
+        var maxRangeCheck = skillRange;
+
+        // HACKFIX : Used mostly for boats, since the actual position of the doodad is the boat's origin, and not where it is displayed
+        // TODO: Do a check based on model size or bounding box instead
+
+        // If weapon is used to calculate range, use that
         if (Template.WeaponSlotForRangeId > 0)
         {
             var minWeaponRange = 0.0f; // Fist default
@@ -166,24 +188,50 @@ public class Skill
                 maxWeaponRange = weaponTemplate.HoldableTemplate.MaxRange;
             }
 
-            if (targetDist < minWeaponRange)
-                return SkillResult.TooCloseRange;
-            if (targetDist > maxWeaponRange)
-                return SkillResult.TooFarRange;
+            minRangeCheck = minWeaponRange;
+            maxRangeCheck = maxWeaponRange;
         }
 
-        if (Template.CastingTime > 0)
+        if (targetDist < minRangeCheck)
         {
-            // var origTime = Template.CastingTime * unit.Cas
-            var castTime = (int)(unit.CastTimeMul * unit.SkillModifiersCache.ApplyModifiers(this, SkillAttribute.CastTime, Template.CastingTime));
+            SkillTlIdManager.ReleaseId(TlId);
+            TlId = 0;
+            return SkillResult.TooCloseRange;
+        }
 
-            if (caster is Character chara)
+        // TODO: Remove exception for doodads
+        // TODO: Remove exceptions for slave initiated by Doodads (needed to fix repair points on ships)
+        if ((targetDist > maxRangeCheck) && (target is not Doodad) && (target is not Slave))
+        {
+            SkillTlIdManager.ReleaseId(TlId);
+            TlId = 0;
+            return SkillResult.TooFarRange;
+        }
+
+        // Calculate casting time if needed
+        var castTime = 0;
+        if (Template.CastingTime > 0)
+            castTime = (int)(unit.CastTimeMul * unit.SkillModifiersCache.ApplyModifiers(this, SkillAttribute.CastTime, Template.CastingTime));
+
+        /*
+        // TODO: Replace Old code
+        else if (character != null && (Id == 2 || Id == 3 || Id == 4) && !caster.IsAutoAttack)
+        {
+            character.IsAutoAttack = true; // enable auto attack
+            character.SkillId = Id;
+            character.TlId = TlId;
+            character.BroadcastPacket(new SCSkillStartedPacket(Id, 0, casterCaster, targetCaster, this, skillObject)
             {
-            }
+                CastTime = Template.CastingTime
+            }, true);
+            character.AutoAttackTask = new MeleeCastTask(this, character, casterCaster, target, targetCaster, skillObject);
+            TaskManager.Instance.Schedule(character.AutoAttackTask, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(1300));
+        }
+        */
 
-            if (castTime < 0)
-                castTime = 0;
-
+        if (castTime > 0)
+        {
+            // Has casting time, schedule a task for it
             caster.BroadcastPacket(new SCSkillStartedPacket(Id, TlId, casterCaster, targetCaster, this, skillObject)
             {
                 CastTime = castTime
@@ -192,21 +240,9 @@ public class Skill
             unit.SkillTask = new CastTask(this, caster, casterCaster, target, targetCaster, skillObject);
             TaskManager.Instance.Schedule(unit.SkillTask, TimeSpan.FromMilliseconds(castTime));
         }
-        // else if (caster is Character && (Id == 2 || Id == 3 || Id == 4) && !caster.IsAutoAttack)
-        // {
-        //     caster.IsAutoAttack = true; // enable auto attack
-        //     caster.SkillId = Id;
-        //     caster.TlId = TlId;
-        //     caster.BroadcastPacket(new SCSkillStartedPacket(Id, 0, casterCaster, targetCaster, this, skillObject)
-        //     {
-        //         CastTime = Template.CastingTime
-        //     }, true);
-        //
-        //     caster.AutoAttackTask = new MeleeCastTask(this, caster, casterCaster, target, targetCaster, skillObject);
-        //     TaskManager.Instance.Schedule(caster.AutoAttackTask, TimeSpan.FromMilliseconds(300), TimeSpan.FromMilliseconds(1300));
-        // }
         else
         {
+            // Immediate skill
             Cast(caster, casterCaster, target, targetCaster, skillObject);
         }
 
@@ -444,6 +480,7 @@ public class Skill
     public void Cast(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster, SkillObject skillObject)
     {
         if (caster is not Unit unit) { return; }
+
         if (!_bypassGcd)
         {
             var gcd = Template.CustomGcd;
@@ -452,6 +489,7 @@ public class Skill
 
             unit.GlobalCooldown = DateTime.UtcNow.AddMilliseconds(gcd * (unit.GlobalCooldownMul / 100));
         }
+
         if (caster is Npc && Template.SkillControllerId != 0)
         {
             var scTemplate = SkillManager.Instance.GetEffectTemplate(Template.SkillControllerId, "SkillController") as SkillControllerTemplate;
@@ -548,13 +586,13 @@ public class Skill
                 var useItem = ItemManager.Instance.GetItemByItemId(castItem.ItemId);
                 if (useItem == null)
                 {
-                    _log.Warn("SkillItem does not exists {0} (templateId: {1})", castItem.ItemId, castItem.ItemTemplateId);
+                    Logger.Warn("SkillItem does not exists {0} (templateId: {1})", castItem.ItemId, castItem.ItemTemplateId);
                     return; // Item does not exists
                 }
 
                 if (useItem._holdingContainer.OwnerId != player.Id)
                 {
-                    _log.Warn("SkillItem {0} (itemId:{1}) is not owned by player {2} ({3})", useItem.Template.Name, useItem.Id, player.Name, player.Id);
+                    Logger.Warn("SkillItem {0} (itemId:{1}) is not owned by player {2} ({3})", useItem.Template.Name, useItem.Id, player.Name, player.Id);
                     return; // Item is not in the player's possessions
                 }
 
@@ -562,7 +600,7 @@ public class Skill
                 var itemsRequired = 1; // TODO: This probably needs a check if it doesn't require multiple of source item to use, instead of just 1
                 if (itemCount < itemsRequired)
                 {
-                    _log.Warn("SkillItem, player does not own enough of {0} (count: {1}/{2}, templateId: {3})", useItem.Id, itemCount, itemsRequired, castItem.ItemTemplateId);
+                    Logger.Warn("SkillItem, player does not own enough of {0} (count: {1}/{2}, templateId: {3})", useItem.Id, itemCount, itemsRequired, castItem.ItemTemplateId);
                     return; // not enough of item
                 }
             }
@@ -578,6 +616,10 @@ public class Skill
         }
     }
 
+    /// <summary>
+    /// Only used to stop/cancel base melee/ranged skills
+    /// </summary>
+    /// <param name="caster"></param>
     public async void StopSkill(BaseUnit caster)
     {
         if (caster is not Unit unit) { return; }
@@ -586,7 +628,8 @@ public class Skill
         caster.BroadcastPacket(new SCSkillStoppedPacket(unit.ObjId, Id), true);
         unit.AutoAttackTask = null;
         unit.IsAutoAttack = false; // turned off auto attack
-        SkillManager.Instance.ReleaseId(TlId);
+        SkillTlIdManager.ReleaseId(TlId);
+        TlId = 0;
     }
 
     public void StartChanneling(BaseUnit caster, SkillCaster casterCaster, BaseUnit target, SkillCastTarget targetCaster, SkillObject skillObject)
@@ -607,9 +650,17 @@ public class Skill
         Doodad doodad = null;
         if (Template.ChannelingDoodadId > 0)
         {
-            doodad = DoodadManager.Instance.Create(0, Template.ChannelingDoodadId, caster);
+            doodad = DoodadManager.Instance.Create(0, Template.ChannelingDoodadId, caster, true);
             doodad.Transform = caster.Transform.CloneDetached(doodad);
+            doodad.InitDoodad();
             doodad.Spawn();
+        }
+
+        // TODO: добавил, так как для квеста 3469 нет события OnItemUse
+        // TODO: added since there is no OnItemUse event for quest 3469
+        if (casterCaster is SkillItem { ItemTemplateId: > 0 } item && caster is Character player)
+        {
+            player.Inventory.ConsumeItem(null, ItemTaskType.SkillReagents, item.ItemTemplateId, 1, null);
         }
 
         caster.BroadcastPacket(new SCSkillFiredPacket(Id, TlId, casterCaster, targetCaster, this, skillObject), true);
@@ -680,20 +731,18 @@ public class Skill
 
     public void ApplyEffects(BaseUnit caster, SkillCaster casterCaster, BaseUnit targetSelf, SkillCastTarget targetCaster, SkillObject skillObject)
     {
-        if (caster is not Unit unit) { return; }
+        if (caster is not Unit unit)
+            return;
+        var player = caster as Character;
         var targets = new List<BaseUnit>(); // TODO crutches
         if (Template.TargetAreaRadius > 0)
         {
             var units = WorldManager.GetAround<BaseUnit>(targetSelf, Template.TargetAreaRadius, true);
-            // TODO Fixed the work doodad ID=5090, "Stacked Lumber" and skill ID=18312, "Throw Torch" in Howling abyss.
-            if (units.Count == 1 && units[0] is not Doodad)
-            {
-                units.Add(targetSelf);
-                units = FilterAoeUnits(caster, units).ToList();
-            }
+            units.Add(targetSelf); // Add main target as well
+            units = FilterAoeUnits(caster, units).ToList();
 
             targets.AddRange(units);
-            // TODO : Need to this if this is needed
+            // TODO : Need to check if this is needed
             //if (targetSelf is Unit) targets.Add(targetSelf);
         }
         else
@@ -703,11 +752,37 @@ public class Skill
 
         foreach (var target in targets)
         {
-            if (target is Unit trg && Template.TargetType == SkillTargetType.Hostile)
+            if (target is Unit targetUnit && Template.TargetType == SkillTargetType.Hostile)
             {
-                HitTypes.TryAdd(trg.ObjId, RollCombatDice(caster, trg));
+                var diceResult = RollCombatDice(caster, targetUnit);
+                if (Template.LevelRuleNoConsideration)
+                {
+                    var damageType = (DamageType)Template.DamageTypeId;
+                    switch (damageType)
+                    {
+                        case DamageType.Melee:
+                            diceResult = SkillHitType.MeleeHit;
+                            break;
+                        case DamageType.Magic:
+                            diceResult = SkillHitType.SpellHit;
+                            break;
+                        case DamageType.Siege:
+                            diceResult = SkillHitType.RangedHit; // no siege version?
+                            break;
+                        case DamageType.Ranged:
+                            diceResult = SkillHitType.RangedHit;
+                            break;
+                        case DamageType.Heal:
+                            diceResult = SkillHitType.SpellHit;
+                            break;
+                        default:
+                            diceResult = SkillHitType.Invalid;
+                            break;
+                    }
+                }
+                HitTypes.TryAdd(targetUnit.ObjId, diceResult);
             }
-            if (target is Doodad doodad)
+            else if (target is Doodad doodad)
             {
                 doodad.OnSkillHit(caster, Id);
             }
@@ -798,46 +873,37 @@ public class Skill
                     continue;
                 }
 
-                if (casterCaster is SkillItem castItem && caster is Character player)
+                if (casterCaster is SkillItem castItem && player != null)
                 {
                     var useItem = ItemManager.Instance.GetItemByItemId(castItem.ItemId);
                     if (effect.ConsumeSourceItem)
                         consumedItems.Add((useItem, effect.ConsumeItemCount));
-                    //player.Inventory.Bag.ConsumeItem(ItemTaskType.SkillReagents, castItem.ItemTemplateId, effect.ConsumeItemCount, useItem);
                     else
                     {
                         var castItemTemplate = ItemManager.Instance.GetTemplate(castItem.ItemTemplateId);
                         if (castItemTemplate.UseSkillAsReagent)
                             consumedItems.Add((useItem, effect.ConsumeItemCount));
-                        //player.Inventory.Bag.ConsumeItem(ItemTaskType.SkillReagents, castItemTemplate.Id, effect.ConsumeItemCount, useItem);
                     }
                 }
 
-                if (caster is Character character && effect.ConsumeItemId != 0 && effect.ConsumeItemCount > 0)
+                if (player != null && effect.ConsumeItemId != 0 && effect.ConsumeItemCount > 0)
                 {
                     if (effect.ConsumeSourceItem)
                     {
-                        if (!character.Inventory.Bag.AcquireDefaultItem(ItemTaskType.SkillEffectConsumption,
+                        if (!player.Inventory.Bag.AcquireDefaultItem(ItemTaskType.SkillEffectConsumption,
                             effect.ConsumeItemId, effect.ConsumeItemCount))
                             continue;
                     }
                     else
                     {
-                        var inventory = character.Inventory.CheckItems(SlotType.Inventory, effect.ConsumeItemId, effect.ConsumeItemCount);
-                        var equipment = character.Inventory.CheckItems(SlotType.Equipment, effect.ConsumeItemId, effect.ConsumeItemCount);
+                        var inventory = player.Inventory.CheckItems(SlotType.Inventory, effect.ConsumeItemId, effect.ConsumeItemCount);
+                        var equipment = player.Inventory.CheckItems(SlotType.Equipment, effect.ConsumeItemId, effect.ConsumeItemCount);
                         if (!(inventory || equipment))
                         {
                             continue;
                         }
 
                         consumedItemTemplates.Add((effect.ConsumeItemId, effect.ConsumeItemCount));
-                        /*
-                        if (inventory)
-                            character.Inventory.Bag.ConsumeItem(ItemTaskType.SkillEffectConsumption, effect.ConsumeItemId, effect.ConsumeItemCount, null);
-                        else
-                        if (equipment)
-                            character.Inventory.Equipment.ConsumeItem(ItemTaskType.SkillEffectConsumption, effect.ConsumeItemId, effect.ConsumeItemCount, null);
-                        */
                     }
                 }
 
@@ -849,9 +915,9 @@ public class Skill
         //This will handle all items with a reagent/product
         var reagents = SkillManager.Instance.GetSkillReagentsBySkillId(Template.Id);
         var skillProducts = SkillManager.Instance.GetSkillProductsBySkillId(Template.Id);
-        if (reagents != null && skillProducts != null)
+        if (reagents.Count > 0 || skillProducts.Count > 0)
         {
-            if (caster is Character player)
+            if (player != null)
             {
                 if (reagents.Count > 0)
                 {
@@ -874,24 +940,44 @@ public class Skill
                 }
             }
         }
-        else
-            _log.Error("Could not find Reagents/Products for Template[{0}", Template.Id);
 
         foreach (var item in effectsToApply)
         {
             //Template can be null for some reason..
             if (item.effect.Template != null)
-                item.effect.Template.Apply(caster, casterCaster, item.target, targetCaster, new CastSkill(Template.Id, TlId), new EffectSource(this), skillObject, DateTime.UtcNow, packets);
+                if (item.effect.Template is KillNpcWithoutCorpseEffect nsse)
+                {
+                    // для квеста 3478, требуется чтобы caster был Npc
+                    var npc = WorldManager.Instance.GetNpcByTemplateId(nsse.NpcId);
+                    item.effect.Template.Apply(npc, casterCaster, item.target, targetCaster, new CastSkill(Template.Id, TlId), new EffectSource(this), skillObject, DateTime.UtcNow, packets);
+                }
+                else
+                {
+                    item.effect.Template.Apply(caster, casterCaster, item.target, targetCaster, new CastSkill(Template.Id, TlId), new EffectSource(this), skillObject, DateTime.UtcNow, packets);
+                }
             else
-                _log.Error("Template not found for Skill[{0}] Effect[{1}]", Template.Id, item.effect.EffectId);
+                Logger.Error($"Template not found for Skill[{Template.Id}] Effect[{item.effect.EffectId}]");
         }
 
         // TODO Call OnItemUse() moved to the ApplyEffects() method from the effects and add trigger ConditionChance;
         // If the probability of passing the effect is greater than the chance, then run the check on the use of the item for the quest
         if (casterCaster is SkillItem skillItem && unit.ConditionChance)
         {
-            if (caster is not Character character) { return; }
-            character.ItemUse(skillItem.ItemId);
+            if (player == null)
+                return;
+            player.ItemUse(skillItem.ItemId);
+
+            // This fixes the issue where "dropping" a Portable Harpoon Cannon (item 23836) would not consume the cannon
+            // Related skill Discard Portable Harpoon Cannon (skill 17735) has no reagents attached
+            // The item however is marked with use_skill_as_reagent, so if it requires reagent according to the item
+            // but has none attached, consume 1 of the source item instead
+            // TODO: Check if this is intended behaviour, or if this is a bug in the compact.sqlite3 file
+            var item = ItemManager.Instance.GetItemByItemId(skillItem.ItemId);
+            if ((item?.Template.UseSkillAsReagent == true) && (reagents.Count <= 0) && (skillProducts.Count <= 0) && (consumedItems.Count <= 0))
+            {
+                consumedItems.Add((item, 1));
+                Logger.Debug($"Consumed item template 1 x {item.TemplateId} ({item.Id}) because of missing reagent information with skill {Template.Id}");
+            }
         }
 
         // Quick Hack
@@ -900,51 +986,64 @@ public class Skill
 
         if (!Cancelled)
         {
-            // Actually consume the to be consumed items
-            // Specific Items
-            foreach (var (item, amount) in consumedItems)
-                if (item._holdingContainer != null)
-                {
-                    item._holdingContainer.ConsumeItem(ItemTaskType.SkillReagents, item.TemplateId, amount, item);
-                }
+            if (player != null)
+            {
+                // Actually consume the to be consumed items
+                // Specific Items
+                foreach (var (item, amount) in consumedItems)
+                    if (item._holdingContainer != null)
+                    {
+                        item._holdingContainer.ConsumeItem(ItemTaskType.SkillReagents, item.TemplateId, amount, item);
+                    }
 
-            // Doesn't matter, but by Template
-            if (caster is Character playerToConsumeFrom)
+                // Doesn't matter, but by Template
                 foreach (var (templateId, amount) in consumedItemTemplates)
-                    playerToConsumeFrom.Inventory.ConsumeItem(null, ItemTaskType.SkillEffectConsumption, templateId, amount, null);
+                    player.Inventory.ConsumeItem(null, ItemTaskType.SkillEffectConsumption, templateId,
+                        amount, null);
+            }
         }
     }
 
+    /// <summary>
+    /// End skill in a normal way
+    /// </summary>
+    /// <param name="caster"></param>
     public void EndSkill(BaseUnit caster)
     {
-        if (caster is not Unit unit) { return; }
-        if (Template.ConsumeLaborPower > 0 && caster is Character chart && !Cancelled)
+        if (caster is not Unit unit)
+            return;
+
+        if (caster is Character character)
         {
-            // Consume labor
-            chart.ChangeLabor((short)-Template.ConsumeLaborPower, Template.ActabilityGroupId);
+            if (Template.ConsumeLaborPower > 0 && !Cancelled)
+            {
+                // Consume labor
+                character.ChangeLabor((short)-Template.ConsumeLaborPower, Template.ActabilityGroupId);
+            }
 
             // Add vocation where needed
-            if (InitialTarget is Doodad doodad && caster is Character character)
+            if ((Template.GainLifePoint > 0) && !Cancelled)
             {
-                if (doodad.Template.GrantsVocationWhenUsed())
-                {
-                    // From what I remember this has always been half the labor rounded upwards
-                    // This is however not correct, as some actions only give a fraction of what you would normally expect
-                    // We multiply the BASE value for server settings, not the total (although I don't think this would affect anything since we don't really have a +1 badge/action buff)
-                    character.ChangeGamePoints(GamePointKind.Vocation, (int)Math.Ceiling(AppConfiguration.Instance.World.VocationRate * Template.ConsumeLaborPower / 2));
-                }
+                // We multiply the BASE value for server settings, not the total (although I don't think this would affect anything since we don't really have a +1 badge/action buff)
+                character.ChangeGamePoints(GamePointKind.Vocation, (int)Math.Ceiling(AppConfiguration.Instance.World.VocationRate * Template.GainLifePoint));
             }
         }
 
         Callback?.Invoke();
         unit.OnSkillEnd(this);
         caster.BroadcastPacket(new SCSkillEndedPacket(TlId), true);
-        SkillManager.Instance.ReleaseId(TlId);
+        SkillTlIdManager.ReleaseId(TlId);
+        TlId = 0;
 
         if (caster is Character character1 && character1.IgnoreSkillCooldowns)
             character1.ResetSkillCooldown(Template.Id, false);
     }
 
+    /// <summary>
+    /// Used for interrupting skills
+    /// </summary>
+    /// <param name="caster"></param>
+    /// <param name="channelDoodad"></param>
     public void Stop(BaseUnit caster, Doodad channelDoodad = null)
     {
         if (caster is not Unit unit) { return; }
@@ -963,11 +1062,11 @@ public class Skill
         unit.OnSkillEnd(this);
         unit.SkillTask = null;
         Cancelled = true;
-        SkillManager.Instance.ReleaseId(TlId);
+        SkillTlIdManager.ReleaseId(TlId);
+        TlId = 0;
 
         if (caster is Character character && character.IgnoreSkillCooldowns)
             character.ResetSkillCooldown(Template.Id, false);
-        //TlId = 0;
     }
 
     public SkillHitType RollCombatDice(BaseUnit attacker, BaseUnit target)
@@ -983,7 +1082,7 @@ public class Skill
         {
             var bullsEyeMod = Attacker.BullsEye / 1000f * 3f / 100f;
 
-            //TODO Check immmunity a better way!!!
+            //TODO Check immunity a better way!!!
             //if (target.Buffs.CheckBuffs(SkillManager.Instance.GetBuffsByTagId(361)))
             //return SkillHitType.Immune;
 
@@ -1059,24 +1158,35 @@ AlwaysHit:
                 || hitType == SkillHitType.RangedMiss
                 || hitType == SkillHitType.Immune;
         }
-        _log.Error($"Unit[{objId}] was not found in the CbtDiceRolls.");
+        Logger.Error($"Unit[{objId}] was not found in the CbtDiceRolls.");
         return true;
+    }
+
+    /// <summary>
+    /// Gets the amount of a Mana a skill would use with the caster's modifiers applied
+    /// </summary>
+    /// <param name="caster"></param>
+    /// <returns></returns>
+    public int ManaCost(Unit caster)
+    {
+        var baseCost = ((caster.GetAbLevel((AbilityType)Template.AbilityId) - 1) * 1.6 + 8) * 3 / 3.65;
+        var cost2 = baseCost * Template.ManaLevelMd + Template.ManaCost;
+        var manaCost = (int)caster.SkillModifiersCache.ApplyModifiers(this, SkillAttribute.ManaCost, cost2);
+        return manaCost;
     }
 
     public void ConsumeMana(BaseUnit caster)
     {
-        if (caster is Unit unit)
-        {
-            var baseCost = ((unit.GetAbLevel((AbilityType)Template.AbilityId) - 1) * 1.6 + 8) * 3 / 3.65;
-            var cost2 = baseCost * Template.ManaLevelMd + Template.ManaCost;
-            var manaCost = (int)caster.SkillModifiersCache.ApplyModifiers(this, SkillAttribute.ManaCost, cost2);
-            unit.ReduceCurrentMp(null, manaCost);
-        }
+        if (caster is not Unit unit)
+            return;
 
-        if (caster is Character character)
-        {
-            character.LastCast = DateTime.UtcNow;
-            character.IsInPostCast = true;
-        }
+        var manaCost = ManaCost(unit);
+        unit.ReduceCurrentMp(null, manaCost);
+
+        if (caster is not Character character)
+            return;
+
+        character.LastCast = DateTime.UtcNow;
+        character.IsInPostCast = true;
     }
 }

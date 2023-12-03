@@ -18,7 +18,7 @@ namespace AAEmu.Game.Core.Managers.World;
 
 public class EnterWorldManager : Singleton<EnterWorldManager>
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
     private Dictionary<uint, uint> _accounts;
 
@@ -89,6 +89,10 @@ public class EnterWorldManager : Singleton<EnterWorldManager>
                     if (connection.ActiveChar?.IsInBattle ?? false)
                         logoutTime *= 30;
 
+                    // Add 10 minutes if you have a Slave Active
+                    if (SlaveManager.Instance.GetActiveSlaveByOwnerObjId(connection.ActiveChar?.ObjId ?? 0) != null)
+                        logoutTime += 1000 * 60 * 10;
+
                     connection.SendPacket(new SCPrepareLeaveWorldPacket(logoutTime, type, false));
 
                     connection.CancelTokenSource = new CancellationTokenSource();
@@ -116,7 +120,7 @@ public class EnterWorldManager : Singleton<EnterWorldManager>
 
                 break;
             default:
-                _log.Warn("[Leave] Unknown type: {0}", type);
+                Logger.Warn("[Leave] Unknown type: {0}", type);
                 break;
         }
     }

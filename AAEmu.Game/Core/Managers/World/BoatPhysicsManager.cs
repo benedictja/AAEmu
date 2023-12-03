@@ -4,6 +4,7 @@ using System.Threading;
 
 using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Packets.G2C;
+using AAEmu.Game.Models;
 using AAEmu.Game.Models.Game.DoodadObj.Static;
 using AAEmu.Game.Models.Game.Slaves;
 using AAEmu.Game.Models.Game.Units;
@@ -29,9 +30,9 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
     /// <summary>
     /// Ticks per second for the physics engine
     /// </summary>
-    private float TargetPhysicsTps { get; set; } = 15f;
+    private float TargetPhysicsTps { get; set; } = 5f;
     private Thread _thread;
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
     private CollisionSystem _collisionSystem;
     private Jitter.World _physWorld;
@@ -74,7 +75,7 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
         }
         catch (Exception e)
         {
-            _log.Error("{0}\n{1}", e.Message, e.StackTrace);
+            Logger.Error("{0}\n{1}", e.Message, e.StackTrace);
         }
     }
 
@@ -90,7 +91,7 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
     {
         try
         {
-            _log.Debug($"PhysicsThread Start: {Thread.CurrentThread.Name} ({Thread.CurrentThread.ManagedThreadId})");
+            Logger.Debug($"PhysicsThread Start: {Thread.CurrentThread.Name} ({Environment.CurrentManagedThreadId})");
             var simulatedSlaveTypeList = new[]
             {
                 SlaveKind.BigSailingShip, SlaveKind.Boat, SlaveKind.Fishboat, SlaveKind.SmallSailingShip,
@@ -113,7 +114,7 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
                     {
                         if (slave.Transform.WorldId != SimulationWorld.Id)
                         {
-                            _log.Debug($"Skip {slave.Name}");
+                            Logger.Debug($"Skip {slave.Name}");
                             continue;
                         }
 
@@ -135,18 +136,18 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
                         var rot = JQuaternion.CreateFromMatrix(slaveRigidBody.Orientation);
                         slave.Transform.Local.ApplyFromQuaternion(rot.X, rot.Z, rot.Y, rot.W);
 
-                        if (_tickCount % 6 != 0) { continue; }
-                        _physWorld.CollisionSystem.Detect(true);
+                        // if (_tickCount % 6 == 0)
+                            _physWorld.CollisionSystem.Detect(true);
                         BoatPhysicsTick(slave, slaveRigidBody);
-                        //_log.Debug($"{_thread.Name}, slave: {slave.Name} collision check tick");
+                        // Logger.Debug($"{_thread.Name}, slave: {slave.Name} collision check tick");
                     }
                 }
             }
-            _log.Debug($"PhysicsThread End: {Thread.CurrentThread.Name} ({Thread.CurrentThread.ManagedThreadId})");
+            Logger.Debug($"PhysicsThread End: {Thread.CurrentThread.Name} ({Environment.CurrentManagedThreadId})");
         }
         catch (Exception e)
         {
-            _log.Error($"StartPhysics: {e}");
+            Logger.Error($"StartPhysics: {e}");
         }
     }
 
@@ -168,7 +169,7 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
         _buoyancy.Add(rigidBody, 3);
         _physWorld.AddBody(rigidBody);
         slave.RigidBody = rigidBody;
-        _log.Debug($"AddShip {slave.Name} -> {SimulationWorld.Name}");
+        Logger.Debug($"AddShip {slave.Name} -> {SimulationWorld.Name}");
     }
 
     public void RemoveShip(Slave slave)
@@ -176,7 +177,7 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
         if (slave.RigidBody == null) return;
         _buoyancy.Remove(slave.RigidBody);
         _physWorld.RemoveBody(slave.RigidBody);
-        _log.Debug($"RemoveShip {slave.Name} <- {SimulationWorld.Name}");
+        Logger.Debug($"RemoveShip {slave.Name} <- {SimulationWorld.Name}");
     }
 
     private void BoatPhysicsTick(Slave slave, RigidBody rigidBody)
@@ -185,20 +186,15 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
         moveType.UseSlaveBase(slave);
         var shipModel = ModelManager.Instance.GetShipModel(slave.Template.ModelId);
 
-        var velAccel = shipModel.Accel; // 2.0f; //per s
-        var rotAccel = shipModel.TurnAccel; // 0.5f; //per s
-        var maxVelForward = shipModel.Velocity; // 12.9f //per s
-        var maxVelBackward = -shipModel.ReverseVelocity; // -5.0f
-
-        // If no driver, then no steering
+        // If no driver, then no steering allowed
         if (!slave.AttachedCharacters.ContainsKey(AttachPointKind.Driver))
         {
             slave.ThrottleRequest = 0;
             slave.SteeringRequest = 0;
         }
 
-        ComputeThrottle(slave, (int)Math.Ceiling(shipModel.Velocity / shipModel.Accel));
-        ComputeSteering(slave);//, (int)Math.Ceiling(shipModel.Velocity / shipModel.TurnAccel));
+        slave.Throttle = ComputeThrottledInput(slave.ThrottleRequest, slave.Throttle, (int)Math.Ceiling(shipModel.Velocity / shipModel.Accel));
+        slave.Steering = ComputeThrottledInput(slave.SteeringRequest, slave.Steering, (int)Math.Ceiling(shipModel.SteerVel / shipModel.TurnAccel));
         slave.RigidBody.IsActive = true;
 
         // Provide minimum speed of 1 when Throttle is used
@@ -207,74 +203,87 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
         if (slave.Throttle < 0 && slave.Speed > -1f)
             slave.Speed = -1f;
 
-        // Convert sbyte throttle value to use as speed
-        slave.Speed += slave.Throttle * 0.00787401575f * (velAccel / 10f);
+        var throttleFloatVal = slave.Throttle * 0.00787401575f; // sbyte -> float
+        var steeringFloatVal = slave.Steering * 0.00787401575f; // sbyte -> float
 
+        // Calculate speed
+        slave.Speed += throttleFloatVal * (shipModel.Accel / 10f);
         // Clamp speed between min and max Velocity
-        slave.Speed = Math.Min(slave.Speed, maxVelForward);
-        slave.Speed = Math.Max(slave.Speed, maxVelBackward);
+        slave.Speed = Math.Min(slave.Speed, shipModel.Velocity);
+        slave.Speed = Math.Max(slave.Speed, -shipModel.ReverseVelocity);
 
-        slave.RotSpeed += slave.Steering * 0.00787401575f * (rotAccel / 100f);
-        slave.RotSpeed = Math.Min(slave.RotSpeed, 1f);
-        slave.RotSpeed = Math.Max(slave.RotSpeed, -1f);
+        // Calculate rotation speed
+        slave.RotSpeed += steeringFloatVal * (slave.TurnSpeed / 100f) * (shipModel.TurnAccel / 360f);
+        // Clamp to Steer Velocity
+        slave.RotSpeed = Math.Min(slave.RotSpeed, shipModel.SteerVel);
+        slave.RotSpeed = Math.Max(slave.RotSpeed, -shipModel.SteerVel);
 
+        // Slow down turning if no steering active
         if (slave.Steering == 0)
         {
-            slave.RotSpeed -= slave.RotSpeed / 20;
+            slave.RotSpeed -= slave.RotSpeed / (TargetPhysicsTps * 5);
             if (Math.Abs(slave.RotSpeed) <= 0.01)
                 slave.RotSpeed = 0;
         }
+        slave.RotSpeed = Math.Clamp(slave.RotSpeed, -1f, 1f);
 
-        if (slave.Throttle == 0) // this needs to be fixed : ships need to apply a static drag, and slowly ship away at the speed instead of doing it like this
+        // this needs to be fixed : ships need to apply a static drag, and slowly ship away at the speed instead of doing it like this
+        if (slave.Throttle == 0)
         {
-            slave.Speed -= slave.Speed / 20f;
+            slave.Speed -= slave.Speed / (TargetPhysicsTps * 5f);
             if (Math.Abs(slave.Speed) < 0.01)
                 slave.Speed = 0;
         }
-        // _log.Debug("Slave: {0}, speed: {1}, rotSpeed: {2}", slave.ObjId, slave.Speed, slave.RotSpeed);
+        // Logger.Debug($"Slave: {slave.Name}, Throttle: {throttleFloatVal:F1} ({slave.ThrottleRequest}), Steering {steeringFloatVal:F1} ({slave.SteeringRequest}), speed: {slave.Speed}, rotSpeed: {slave.RotSpeed}");
 
         // Calculate some stuff for later
         var boxSize = rigidBody.Shape.BoundingBox.Max - rigidBody.Shape.BoundingBox.Min;
         var tubeVolume = shipModel.TubeLength * shipModel.TubeRadius * MathF.PI;
         var solidVolume = MathF.Abs(rigidBody.Mass - tubeVolume);
 
-        var floor = WorldManager.Instance.GetHeight(slave.Transform); // получим уровень земли // get ground level
-        _log.Debug($"[Height] Z-Pos: {slave.Transform.World.Position.Z} - Floor: {floor}");
-        if (floor >= slave.Transform.World.Position.Z - boxSize.Z)
+        // Get the floor height coordinates
+        var floor = WorldManager.Instance.GetHeight(slave.Transform);
+        Logger.Trace($"[Height] Z-Pos: {slave.Transform.World.Position.Z} - Floor: {floor}");
+
+        // Check floor collision
+        if (slave.Transform.World.Position.Z - boxSize.Y / 2 - floor < 1.0 && AppConfiguration.Instance.HeightMapsEnable)
         {
-            var damage = _random.Next(500, 750); // damage randomly 500-750
-            if (damage > 0)
-            {
-                slave.DoDamage((int)damage, false, KillReason.Collide);
-            }
-
-            _log.Debug($"Slave: {slave.ObjId}, speed: {slave.Speed}, rotSpeed: {slave.RotSpeed}, floor: {floor}, Z: {slave.Transform.World.Position.Z}, damage: {damage}");
-
             if (slave.Hp <= 0)
             {
                 slave.Speed = 0;
                 return;
             }
+
+            var damage = _random.Next(500, 750); // damage randomly 500-750
+            if (damage > 0)
+            {
+                slave.DoDamage(damage, false, KillReason.Collide);
+            }
+
+            Logger.Debug($"Slave: {slave.ObjId}, speed: {slave.Speed}, rotSpeed: {slave.RotSpeed}, floor: {floor}, Z: {slave.Transform.World.Position.Z}, damage: {damage}");
         }
 
+        // Get current rotation of the ship
         var rpy = PhysicsUtil.GetYawPitchRollFromMatrix(rigidBody.Orientation);
         var slaveRotRad = rpy.Item1 + 90 * (MathF.PI / 180.0f);
 
-        var forceThrottle = slave.Speed * 17.25f * slave.MoveSpeedMul; // don't know what this number is, but it's perfect for all ships
+        var forceThrottle = slave.Speed * slave.MoveSpeedMul; // Not sure if correct, but it feels correct
+        // Apply directional force
         rigidBody.AddForce(new JVector(forceThrottle * rigidBody.Mass * MathF.Cos(slaveRotRad), 0.0f, forceThrottle * rigidBody.Mass * MathF.Sin(slaveRotRad)));
 
+        var steer = slave.RotSpeed * 60f;
         // Make sure the steering is reversed when going backwards.
-        var steer = (float)slave.Steering * shipModel.SteerVel * ((100f + slave.TurnSpeed) / 100f);
         if (forceThrottle < 0)
             steer *= -1;
 
-        // Calculate Steering Force based on bounding box 
+        // Calculate Steering Force based on bounding box
         var steerForce = -steer * (solidVolume * boxSize.X * boxSize.Y / 172.5f * 2f); // Totally random value, but it feels right
+        //var steerForce = -steer * solidVolume ;
         rigidBody.AddTorque(new JVector(0, steerForce, 0));
 
         /*
         if ((slave.Steering != 0) || (slave.Throttle != 0))
-            _log.Debug($"Request: {slave.SteeringRequest}, Steering: {slave.Steering}, steer: {steer}, vol: {solidVolume} mass: {rigidBody.Mass}, force: {steerForce}, torque: {rigidBody.Torque}");
+            Logger.Debug($"Request: {slave.SteeringRequest}, Steering: {slave.Steering}, steer: {steer}, vol: {solidVolume} mass: {rigidBody.Mass}, force: {steerForce}, torque: {rigidBody.Torque}");
         */
 
         // Insert new Rotation data into MoveType
@@ -298,13 +307,13 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
         // This will likely create issues with skill that generate position specified plots likely not having this offset when on the ship
 
         // Don't know how to handle X/Y for this, if we even should ...
-        // moveType.X += shipModel.MassCenterX; 
+        // moveType.X += shipModel.MassCenterX;
         // moveType.Y += shipModel.MassCenterY;
 
         // We can more or less us the model Mass Center Z value to get how much it needs to sink
-        // It doesn't actually do this server-side, as wel only modify the packet sent to the players
+        // It doesn't actually do this server-side, as we only modify the packet sent to the players
         // If center of mass is positive rather than negative, we need to ignore it here to prevent the boat from floating
-        moveType.Z += (shipModel.MassCenterZ < 0f ? shipModel.MassCenterZ / 2f : 0f) - shipModel.KeelHeight;
+        moveType.Z += (shipModel.MassCenterZ < 0f ? shipModel.MassCenterZ / 2f : 0f); // - shipModel.KeelHeight;
 
         // Do not allow the body to flip
         slave.RigidBody.Orientation = JMatrix.CreateFromYawPitchRoll(rpy.Item1, 0, 0); // TODO: Fix me with proper physics
@@ -316,9 +325,9 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
 
         // Send the packet
         slave.BroadcastPacket(new SCOneUnitMovementPacket(slave.ObjId, moveType), false);
-        // _log.Debug("Island: {0}", slave.RigidBody.CollisionIsland.Bodies.Count);
+        // Logger.Debug("Island: {0}", slave.RigidBody.CollisionIsland.Bodies.Count);
 
-        // Update all to main Slave and it's children 
+        // Update all to main Slave and it's children
         slave.Transform.FinalizeTransform();
     }
 
@@ -327,49 +336,37 @@ public class BoatPhysicsManager//: Singleton<BoatPhysicsManager>
         ThreadRunning = false;
     }
 
-    private static void ComputeThrottle(Slave slave, int throttleAccel = 6)
+    /// <summary>
+    /// Calculate smooth transition for throttle and steering
+    /// </summary>
+    /// <param name="inputRequest">New request value</param>
+    /// <param name="currentValue">Current calculated value</param>
+    /// <param name="acceleration">Step size</param>
+    /// <returns></returns>
+    private static sbyte ComputeThrottledInput(sbyte inputRequest, sbyte currentValue, int acceleration)
     {
-        if (slave.ThrottleRequest > slave.Throttle)
-        {
-            slave.Throttle = (sbyte)Math.Min(sbyte.MaxValue, slave.Throttle + throttleAccel);
-        }
-        else if (slave.ThrottleRequest < slave.Throttle && slave.ThrottleRequest != 0)
-        {
-            slave.Throttle = (sbyte)Math.Max(sbyte.MinValue, slave.Throttle - throttleAccel);
-        }
-        else
-        {
-            if (slave.Throttle > 0)
-            {
-                slave.Throttle = (sbyte)Math.Max(slave.Throttle - throttleAccel, 0);
-            }
-            else if (slave.Throttle < 0)
-            {
-                slave.Throttle = (sbyte)Math.Min(slave.Throttle + throttleAccel, 0);
-            }
-        }
-    }
+        var inputSign = Math.Sign(inputRequest);
+        var inputVal = Math.Abs(inputRequest);
 
-    private static void ComputeSteering(Slave slave, int steeringAccel = 6)
-    {
-        if (slave.SteeringRequest > slave.Steering)
+        var curSign = Math.Sign(currentValue);
+        var curVal = Math.Abs(currentValue);
+
+        var sameDirectionPush = ((inputSign > 0) && (curSign >= 0)) || ((inputSign < 0) && (curSign <= 0));
+        var oppositeDirectionPush = ((inputSign < 0) && (curSign >= 0)) || ((inputSign > 0) && (curSign <= 0));
+
+        // Slowing down?
+        if (sameDirectionPush && inputVal < curVal)
         {
-            slave.Steering = (sbyte)Math.Min(sbyte.MaxValue, slave.Steering + steeringAccel);
+            sameDirectionPush = false;
+            oppositeDirectionPush = true;
         }
-        else if (slave.SteeringRequest < slave.Steering && slave.SteeringRequest != 0)
-        {
-            slave.Steering = (sbyte)Math.Max(sbyte.MinValue, slave.Steering - steeringAccel);
-        }
-        else
-        {
-            if (slave.Steering > 0)
-            {
-                slave.Steering = (sbyte)Math.Max(slave.Steering - steeringAccel, 0);
-            }
-            else if (slave.Steering < 0)
-            {
-                slave.Steering = (sbyte)Math.Min(slave.Steering + steeringAccel, 0);
-            }
-        }
+
+        if (sameDirectionPush)
+            return (sbyte)(Math.Clamp(Math.Max(inputVal, curVal) + acceleration, sbyte.MinValue, sbyte.MaxValue) * inputSign);
+
+        if (oppositeDirectionPush)
+            return (sbyte)(Math.Clamp(Math.Max(inputVal, curVal) - acceleration, sbyte.MinValue, sbyte.MaxValue) * inputSign);
+
+        return 0;
     }
 }

@@ -5,17 +5,20 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Text;
 using AAEmu.Commons.IO;
 using AAEmu.Commons.Utils;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using NLog;
 
 namespace AAEmu.Game.Utils.Scripts;
 
 public static class ScriptCompiler
 {
-    private static readonly Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private static Assembly _assembly;
     private static Dictionary<string, ScriptObject> _scriptsObjects = new();
 
@@ -60,12 +63,12 @@ public static class ScriptCompiler
             catch (Exception e)
             {
                 hasErrors = true;
-                _log.Error($"Error in {type}");
-                _log.Error(e);
+                Logger.Error($"Error in {type}");
+                Logger.Error(e);
             }
         }
         if (hasErrors)
-            _log.Warn($"There were some errors when compiling the user scripts !");
+            Logger.Warn($"There were some errors when compiling the user scripts !");
         // throw new Exception("There were errors in the user scripts !");
     }
 
@@ -95,19 +98,23 @@ public static class ScriptCompiler
 
     public static bool CompileScripts(IEnumerable<MetadataReference> references, out Assembly assembly, out ImmutableArray<Diagnostic> diagnostics)
     {
-        _log.Info("Compiling scripts...");
+        Logger.Info("Compiling scripts...");
         var files = GetScripts("*.cs");
         var isOk = true;
 
         if (files.Length == 0)
         {
-            _log.Info("Compile done (no files found)");
+            Logger.Info("Compile done (no files found)");
             assembly = null;
             diagnostics = ImmutableArray<Diagnostic>.Empty;
             return true;
         }
 
         var syntaxTrees = ParseScripts(files);
+
+        //DebugCompilation(syntaxTrees, references);
+
+        Assembly assemblyResult = null;
         var assemblyName = Path.GetRandomFileName();
 
         var compilation = CSharpCompilation.Create(
@@ -116,7 +123,6 @@ public static class ScriptCompiler
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        Assembly assemblyResult = null;
 
         using (var ms = new MemoryStream())
         {
@@ -128,19 +134,50 @@ public static class ScriptCompiler
                 assemblyResult = AssemblyLoadContext.Default.LoadFromStream(ms);
             }
 
-            isOk = Display(result.Diagnostics);
+            isOk = Display(result.Diagnostics, syntaxTrees);
         }
 
         assembly = assemblyResult;
+
         return (assemblyResult != null) && (isOk);
     }
 
-    private static bool Display(ImmutableArray<Diagnostic> diagnostics)
+    // Only for debugging purposes
+#pragma warning disable IDE0051 // Remove unused private members
+    private static void DebugCompilation(List<SyntaxTree> syntaxTrees, IEnumerable<MetadataReference> references)
+    {
+        foreach (var syntaxTree in syntaxTrees)
+        {
+            var assemblyName = Path.GetRandomFileName();
+
+            var compilation = CSharpCompilation.Create(
+                assemblyName,
+                new[] { syntaxTree },
+                references,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+
+            using (var ms = new MemoryStream())
+            {
+                var result = compilation.Emit(ms);
+                var diagnostics = result.Diagnostics;
+                if (result.Success)
+                {
+                    ms.Seek(0, SeekOrigin.Begin);
+                }
+
+                Display(result.Diagnostics, new() { syntaxTree });
+            }
+        }
+    }
+#pragma warning restore IDE0051 // Remove unused private members
+
+    private static bool Display(ImmutableArray<Diagnostic> diagnostics, List<SyntaxTree> syntaxTrees)
     {
         bool res = true;
         if (diagnostics.Length == 0)
         {
-            _log.Info("Compile done (0 errors, 0 warnings)");
+            Logger.Info("Compile done (0 errors, 0 warnings)");
         }
         else
         {
@@ -150,25 +187,46 @@ public static class ScriptCompiler
             if (errorCount > 0)
             {
                 res = false;
-                _log.Error("Compile failed ({0} errors, {1} warnings)", errorCount, warningCount);
+                Logger.Error("Compile failed ({0} errors, {1} warnings)", errorCount, warningCount);
             }
             else
-                _log.Info("Compile done ({0} errors, {1} warnings)", errorCount, warningCount);
+                Logger.Info("Compile done ({0} errors, {1} warnings)", errorCount, warningCount);
 
             var result = diagnostics.Where(diagnostic =>
                 diagnostic.Severity == DiagnosticSeverity.Error ||
                 diagnostic.Severity == DiagnosticSeverity.Warning);
             foreach (var diagnostic in result)
             {
+                //SyntaxTree responsibleSyntaxTree = GetResponsibleSyntaxTree(diagnostic.Location.SourceSpan, syntaxTrees);
                 if (diagnostic.Severity == DiagnosticSeverity.Error)
-                    _log.Error(diagnostic);
+                {
+                    Logger.Error(diagnostic);
+                    //Logger.Error("Syntax Tree for Error:\n" + responsibleSyntaxTree.GetRoot().ToFullString());
+                }
                 else
-                    _log.Warn(diagnostic);
+                {
+                    Logger.Warn(diagnostic);
+                    //Logger.Warn("Syntax Tree for Warning:\n" + responsibleSyntaxTree.GetRoot().ToFullString());
+                }
             }
         }
 
         return res;
     }
+
+#pragma warning disable IDE0051 // Remove unused private members
+    private static SyntaxTree GetResponsibleSyntaxTree(TextSpan location, List<SyntaxTree> syntaxTrees)
+    {
+        foreach (var syntaxTree in syntaxTrees)
+        {
+            if (syntaxTree.GetRoot().FullSpan.Contains(location))
+            {
+                return syntaxTree;
+            }
+        }
+        return null; // Location does not belong to any syntax tree
+    }
+#pragma warning restore IDE0051 // Remove unused private members
 
     private static void EnsureDirectory(string dir)
     {
@@ -196,12 +254,58 @@ public static class ScriptCompiler
     private static List<SyntaxTree> ParseScripts(IEnumerable<string> list)
     {
         var syntaxTrees = new List<SyntaxTree>();
+        StringBuilder sb = new();
         foreach (var path in list)
         {
-            var script = FileManager.GetFileContents(path);
+            var script = RenameClasses(path);
+            sb.AppendLine(script);
             syntaxTrees.Add(CSharpSyntaxTree.ParseText(script));
         }
 
+        var finalString = sb.ToString();
         return syntaxTrees;
+    }
+
+    private static string RenameClasses(string filePath)
+    {
+        var script = FileManager.GetFileContents(filePath);
+        var syntaxTree = CSharpSyntaxTree.ParseText(script);
+        var root = syntaxTree.GetRoot();
+        var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
+        var dictionaryOldNew = new Dictionary<string, string>();
+        foreach (var @class in classes)
+        {
+            dictionaryOldNew.Add(@class.Identifier.ValueText, "Generated_" + @class.Identifier.ValueText);
+        }
+
+        // Rename enums
+        var enums = root.DescendantNodes().OfType<EnumDeclarationSyntax>();
+        foreach (var @enum in enums)
+        {
+            dictionaryOldNew.Add(@enum.Identifier.ValueText, "Generated_" + @enum.Identifier.ValueText);
+            var newName = "Generated_" + @enum.Identifier.ValueText;
+            var newEnum = @enum.WithIdentifier(SyntaxFactory.Identifier(newName));
+            root = root.ReplaceNode(@enum, newEnum);
+        }
+
+        var finalString = root.ToFullString();
+
+        // Classes with multiple constructors aren't replaced with SyntaxNode
+        foreach (var (oldName, newName) in dictionaryOldNew)
+        {
+            finalString = finalString.Replace($"new {oldName}(", $"new {newName}(");
+            finalString = finalString.Replace($"new {oldName}\r\n", $"new {newName}\r\n");
+            finalString = finalString.Replace($"new {oldName}\n", $"new {newName}\n");
+            finalString = finalString.Replace($"public {oldName}", $"public {newName}");
+            finalString = finalString.Replace($" {oldName}(", $" {newName}(");
+            finalString = finalString.Replace($"class {oldName}", $"class {newName}");
+            finalString = finalString.Replace($"<{oldName}>", $"<{newName}>");
+            finalString = finalString.Replace($"typeof({oldName})", $"typeof({newName})");
+            finalString = finalString.Replace($"({oldName} ", $"({newName} ");
+            finalString = finalString.Replace($" {oldName}.", $" {newName}.");
+            finalString = finalString.Replace($" {oldName} ", $" {newName} ");
+        }
+
+        return finalString;
     }
 }

@@ -4,20 +4,23 @@ using System.Collections.Generic;
 using System.Numerics;
 
 using AAEmu.Game.Core.Managers;
+using AAEmu.Game.Core.Managers.AAEmu.Game.Core.Managers;
 using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Core.Packets.G2C;
 using AAEmu.Game.Models.Game.AI.AStar;
+using AAEmu.Game.Models.Game.AI.v2.Behaviors.Common;
 using AAEmu.Game.Models.Game.AI.v2.Framework;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.Formulas;
 using AAEmu.Game.Models.Game.Items;
+using AAEmu.Game.Models.Game.Models;
 using AAEmu.Game.Models.Game.Skills;
+using AAEmu.Game.Models.Game.Skills.SkillControllers;
 using AAEmu.Game.Models.Game.Units;
 using AAEmu.Game.Models.Game.Units.Movements;
 using AAEmu.Game.Models.Game.Units.Static;
+using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Utils;
-
-using static AAEmu.Game.Models.Game.Skills.SkillControllers.SkillController;
 
 namespace AAEmu.Game.Models.Game.NPChar;
 
@@ -38,6 +41,58 @@ public class Npc : Unit
     public ConcurrentDictionary<uint, Aggro> AggroTable { get; }
     public uint CurrentAggroTarget { get; set; }
     public bool CanFly { get; set; } // TODO mark Npc's that can fly so that they don't land on the ground when calculating the Z height
+
+    public override float BaseMoveSpeed
+    {
+        get
+        {
+            var model = ModelManager.Instance.GetActorModel(Template.ModelId);
+            if (model == null)
+                return 1f;
+            // TODO: Implement stance switching mechanic
+            if (!model.Stances.TryGetValue(CurrentGameStance, out var stance))
+                return 1f;
+
+            // Returning? Use sprint speed
+            if (Ai?.GetCurrentBehavior() is ReturnStateBehavior rsb)
+                return stance.AiMoveSpeedSprint;
+
+            // In combat, use running speed
+            if (IsInBattle)
+                return Math.Min(stance.AiMoveSpeedRun, stance.MaxSpeed);
+
+            // Not in combat (should be roaming), use walk speed
+            return Math.Min(stance.AiMoveSpeedWalk, stance.MaxSpeed);
+        }
+    }
+
+    private GameStanceType _currentGameStance = GameStanceType.Combat;
+    public GameStanceType CurrentGameStance
+    {
+        get => _currentGameStance;
+        set
+        {
+            if (_currentGameStance == value)
+                return;
+
+            if (CanFly)
+            {
+                _currentGameStance = GameStanceType.Fly;
+                return;
+            }
+
+            if (IsUnderWater)
+            {
+                if (value == GameStanceType.Combat)
+                    _currentGameStance = GameStanceType.CoSwim;
+                else
+                    _currentGameStance = GameStanceType.Swim;
+                return;
+            }
+
+            _currentGameStance = value;
+        }
+    }
 
     #region Attributes
     [UnitAttribute(UnitAttribute.Str)]
@@ -715,7 +770,10 @@ public class Npc : Unit
                 mate.AddExp(KillExp);
                 character.SendMessage($"Pet gained {KillExp} XP");
             }
-            character.Quests.OnKill(this);
+            //character.Quests.OnKill(this);
+            // инициируем событие
+            //Task.Run(() => QuestManager.Instance.DoOnMonsterHuntEvents(character, this));
+            QuestManager.Instance.DoOnMonsterHuntEvents(character, this);
         }
 
         Spawner?.DecreaseCount(this);
@@ -739,7 +797,24 @@ public class Npc : Unit
 
     public void AddUnitAggro(AggroKind kind, Unit unit, int amount)
     {
-        var player = unit as Character; 
+        var player = unit as Character;
+
+        //player?.SendMessage(ChatType.System, $"AddUnitAggro {player.Name} + {amount} for {this.ObjId}");
+
+        // check self buff tags
+        if (Buffs.CheckBuffTag((uint)TagsEnum.NoFight) || Buffs.CheckBuffTag((uint)TagsEnum.Returning))
+        {
+            ClearAggroOfUnit(unit);
+            return;
+        }
+
+        // check target buff tags
+        if ((unit.Buffs?.CheckBuffTag((uint)TagsEnum.NoFight) ?? false) || (unit.Buffs?.CheckBuffTag((uint)TagsEnum.Returning) ?? false))
+        {
+            ClearAggroOfUnit(unit);
+            return;
+        }
+
         amount = (int)(amount * (unit.AggroMul / 100.0f));
         amount = (int)(amount * (IncomingAggroMul / 100.0f));
 
@@ -756,22 +831,37 @@ public class Npc : Unit
                 unit.Events.OnHealed += OnAbuserHealed;
                 unit.Events.OnDeath += OnAbuserDied;
             }
-            
+
             // TODO: make this party/raid wide? Take into account pets/slaves?
             // If there is a quest starter attached to this NPC, start it when unit gets added for the first time
             // to the aggro list
             if ((Template.EngageCombatGiveQuestId > 0) && player is not null)
             {
                 if (!player.Quests.IsQuestComplete(Template.EngageCombatGiveQuestId) && !player.Quests.HasQuest(Template.EngageCombatGiveQuestId))
-                    player.Quests.AddStart(Template.EngageCombatGiveQuestId);
+                    player.Quests.Add(Template.EngageCombatGiveQuestId);
             }
         }
 
-        player?.Quests.OnAggro(this);
+        if (player == null)
+        {
+            return;
+        }
+        //player?.Quests.OnAggro(this);
+        // инициируем событие
+        //Task.Run(() => QuestManager.Instance.DoOnAggroEvents(player, this));
+        QuestManager.Instance.DoOnAggroEvents(player, this);
     }
 
     public void ClearAggroOfUnit(Unit unit)
     {
+        if (unit is null)
+            return;
+
+        var player = unit as Character;
+
+        // player?.SendMessage(ChatType.System, $"ClearAggroOfUnit {player.Name} for {this.ObjId}");
+
+        var lastAggroCount = AggroTable.Count;
         if (AggroTable.TryRemove(unit.ObjId, out var value))
         {
             unit.Events.OnHealed -= OnAbuserHealed;
@@ -779,7 +869,26 @@ public class Npc : Unit
         }
         else
         {
-            Log.Warn("Failed to remove unit[{0}] aggro from NPC[{1}]", unit.ObjId, this.ObjId);
+            Logger.Warn("Failed to remove unit[{0}] aggro from NPC[{1}]", unit.ObjId, this.ObjId);
+        }
+
+        if (AggroTable.Count != lastAggroCount)
+            CheckIfEmptyAggroToReturn();
+    }
+
+    private void CheckIfEmptyAggroToReturn()
+    {
+        // If aggro table is empty, and too far from spawn, trigger a return to spawn effect.
+        if (AggroTable.IsEmpty)
+        {
+            if (Ai != null)
+            {
+                var distanceToIdle = MathUtil.CalculateDistance(Ai.IdlePosition.Local.Position, Ai.Owner.Transform.World.Position, true);
+                if (distanceToIdle > 4)
+                    Ai.GoToReturn();
+            }
+
+            IsInBattle = false;
         }
     }
 
@@ -795,7 +904,10 @@ public class Npc : Unit
             }
         }
 
+        var lastAggroCount = AggroTable.Count;
         AggroTable.Clear();
+        if (lastAggroCount > 0)
+            CheckIfEmptyAggroToReturn();
     }
 
     public void OnAbuserHealed(object sender, OnHealedArgs args)
@@ -825,14 +937,16 @@ public class Npc : Unit
         AddUnitAggro(AggroKind.Damage, attacker, amount);
         Ai.OnAggroTargetChanged();
 
-        /*var topAbuser = AggroTable.GetTopTotalAggroAbuserObjId();
+        /*
+        var topAbuser = AggroTable.GetTopTotalAggroAbuserObjId();
         if ((CurrentTarget?.ObjId ?? 0) != topAbuser)
         {
             CurrentAggroTarget = topAbuser; 
             var unit = WorldManager.Instance.GetUnit(topAbuser);
             SetTarget(unit);
             Ai?.OnAggroTargetChanged();
-        }*/
+        }
+        */
     }
 
     private const int decreaseMoveSpeed = 161;
@@ -841,6 +955,10 @@ public class Npc : Unit
 
     public void MoveTowards(Vector3 other, float distance, byte flags = 4)
     {
+        distance *= Ai.Owner.MoveSpeedMul; // Apply speed modifier
+        if (distance < 0.01f)
+            return;
+
         if (Buffs.HasEffectsMatchingCondition(e =>
                 e.Template.Stun ||
                 e.Template.Sleep ||
@@ -848,18 +966,12 @@ public class Npc : Unit
                 e.Template.Knockdown ||
                 e.Template.Fastened))
         {
+            //Logger.Debug($"{ObjId} @NPC_NAME({TemplateId}); is stuck in place");
             return;
         }
 
-        if ((ActiveSkillController?.State ?? SCState.Ended) == SCState.Running)
+        if ((ActiveSkillController?.State ?? SkillController.SCState.Ended) == SkillController.SCState.Running)
             return;
-
-        if (Buffs.CheckBuffs(SkillManager.Instance.GetBuffsByTagId(shackle)) ||
-            Buffs.CheckBuffs(SkillManager.Instance.GetBuffsByTagId(decreaseMoveSpeed)) ||
-            Buffs.CheckBuffs(SkillManager.Instance.GetBuffsByTagId(snare)))
-        {
-            return;
-        }
 
         var oldPosition = Transform.Local.ClonePosition();
 
@@ -880,7 +992,7 @@ public class Npc : Unit
         {
             // try to find Z first in GeoData, and then in HeightMaps, if not found, leave Z as it is
             newZ = WorldManager.Instance.GetHeight(Transform.ZoneId, newX, newY);
-            if (Math.Abs(Transform.Local.Position.Z - newZ) <= 10)
+            if (Math.Abs(Transform.Local.Position.Z - newZ) < 1f)
             {
                 Transform.Local.SetHeight(newZ);
             }
@@ -990,12 +1102,12 @@ public class Npc : Unit
         Ai.PathNode.ZoneKey = Ai.Owner.Transform.ZoneId;
         Ai.PathNode.findPath = Ai.PathNode.FindPath(Ai.PathNode.pos1, Ai.PathNode.pos2);
 
-        Log.Trace($"AStar: points found Total: {Ai.PathNode.findPath?.Count ?? 0}");
+        Logger.Trace($"AStar: points found Total: {Ai.PathNode.findPath?.Count ?? 0}");
         if (Ai.PathNode.findPath != null)
         {
             for (var i = 0; i < Ai.PathNode.findPath.Count; i++)
             {
-                Log.Trace($"AStar: point {i} coordinates X:{Ai.PathNode.findPath[i].X}, Y:{Ai.PathNode.findPath[i].Y}, Z:{Ai.PathNode.findPath[i].Z}");
+                Logger.Trace($"AStar: point {i} coordinates X:{Ai.PathNode.findPath[i].X}, Y:{Ai.PathNode.findPath[i].Y}, Z:{Ai.PathNode.findPath[i].Z}");
             }
         }
     }

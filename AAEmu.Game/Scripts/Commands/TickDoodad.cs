@@ -3,12 +3,13 @@ using AAEmu.Game.Core.Managers.World;
 using AAEmu.Game.Models.Game;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj;
+using AAEmu.Game.Utils.Scripts;
 
 namespace AAEmu.Game.Scripts.Commands;
 
 public class TickDoodad : ICommand
 {
-    // Unused protected static Logger _log = LogManager.GetCurrentClassLogger();
+    // Unused protected static Logger Logger = LogManager.GetCurrentClassLogger();
     public void OnLoad()
     {
         CommandManager.Instance.Register("tickdoodad", this);
@@ -24,7 +25,7 @@ public class TickDoodad : ICommand
         return "Moves a doodad onto it's next Phase using <objId> inside a <radius> range.";
     }
 
-    public void Execute(Character character, string[] args)
+    public void Execute(Character character, string[] args, IMessageOutput messageOutput)
     {
         if (args.Length < 1)
         {

@@ -7,11 +7,10 @@ using AAEmu.Game.Utils;
 
 namespace AAEmu.Game.Models.Game.Units.Route;
 
-
-class Track : Patrol
+internal class Track : Patrol
 {
-    float distance = 1.5f;
-    float MovingDistance = 0.27f;
+    private float distance = 1.5f;
+    private float MovingDistance = 0.27f;
     public override void Execute(Npc npc)
     {
         Interrupt = false;
@@ -152,8 +151,9 @@ class Track : Patrol
                 }
                 else
                 {
-                    npc.BroadcastPacket(new SCCombatClearedPacket(npc.CurrentTarget.ObjId), true);
-                    npc.BroadcastPacket(new SCCombatClearedPacket(npc.ObjId), true);
+                    npc.IsInBattle = false;
+                    if (npc.CurrentTarget is Unit unit)
+                        unit.IsInBattle = false;
                     npc.CurrentTarget = null;
                     //npc.StartRegen();
                     npc.BroadcastPacket(new SCTargetChangedPacket(npc.ObjId, 0), true);

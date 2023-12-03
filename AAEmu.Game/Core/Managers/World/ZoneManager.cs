@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Numerics;
 using AAEmu.Commons.Utils;
+using AAEmu.Game.Models.Game.DoodadObj;
 using AAEmu.Game.Models.Game.World.Zones;
 using AAEmu.Game.Utils.DB;
 using NLog;
@@ -10,7 +11,7 @@ namespace AAEmu.Game.Core.Managers.World;
 
 public class ZoneManager : Singleton<ZoneManager>
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
 
     private Dictionary<uint, uint> _zoneIdToKey;
     private Dictionary<uint, Zone> _zones;
@@ -61,7 +62,7 @@ public class ZoneManager : Singleton<ZoneManager>
         _conflicts = new Dictionary<ushort, ZoneConflict>();
         _groupBannedTags = new Dictionary<uint, ZoneGroupBannedTag>();
         _climateElem = new Dictionary<uint, ZoneClimateElem>();
-        _log.Info("Loading ZoneManager...");
+        Logger.Info("Loading ZoneManager...");
         using (var connection = SQLite.CreateConnection())
         {
             using (var command = connection.CreateCommand())
@@ -86,7 +87,7 @@ public class ZoneManager : Singleton<ZoneManager>
                 }
             }
 
-            _log.Info("Loaded {0} zones", _zones.Count);
+            Logger.Info("Loaded {0} zones", _zones.Count);
 
             using (var command = connection.CreateCommand())
             {
@@ -115,7 +116,7 @@ public class ZoneManager : Singleton<ZoneManager>
                 }
             }
 
-            _log.Info("Loaded {0} groups", _groups.Count);
+            Logger.Info("Loaded {0} groups", _groups.Count);
 
             using (var command = connection.CreateCommand())
             {
@@ -157,7 +158,7 @@ public class ZoneManager : Singleton<ZoneManager>
                                     .Conflict); // Set to Conflict for testing, normally it should start at Tension
                         }
                         else
-                            _log.Warn("ZoneGroupId: {1} doesn't exist for conflict", zoneGroupId);
+                            Logger.Warn("ZoneGroupId: {1} doesn't exist for conflict", zoneGroupId);
                     }
                 }
             }
@@ -180,7 +181,7 @@ public class ZoneManager : Singleton<ZoneManager>
                 }
             }
 
-            _log.Info("Loaded {0} group banned tags", _groupBannedTags.Count);
+            Logger.Info("Loaded {0} group banned tags", _groupBannedTags.Count);
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = "SELECT * FROM zone_climate_elems";
@@ -192,13 +193,13 @@ public class ZoneManager : Singleton<ZoneManager>
                         var template = new ZoneClimateElem();
                         template.Id = reader.GetUInt32("id");
                         template.ZoneClimateId = reader.GetUInt32("zone_climate_id");
-                        template.ClimateId = reader.GetUInt32("climate_id");
+                        template.ClimateId = (Climate)reader.GetUInt32("climate_id");
                         _climateElem.Add(template.Id, template);
                     }
                 }
             }
 
-            _log.Info("Loaded {0} climate elems", _climateElem.Count);
+            Logger.Info("Loaded {0} climate elems", _climateElem.Count);
         }
     }
 
@@ -227,5 +228,43 @@ public class ZoneManager : Singleton<ZoneManager>
         var newY = origin.Y * 1024f + point.Y;
 
         return new Vector3(newX, newY, point.Z);
+    }
+
+    public List<Climate> GetClimatesByZone(Zone zone)
+    {
+        var res = new List<Climate>();
+        foreach (var zoneClimateElem in _climateElem.Values)
+        {
+            if (zoneClimateElem.ZoneClimateId == zone.ZoneClimateId)
+                res.Add(zoneClimateElem.ClimateId);
+        }
+        return res;
+    }
+
+    /// <summary>
+    /// Checks if a doodad is located in a matching climate
+    /// </summary>
+    /// <param name="doodad"></param>
+    /// <returns>Returns true if the doodad can have a growth time bonus, false if out of climate, or no climate defined for the doodad</returns>
+    public static bool DoodadHasMatchingClimate(Doodad doodad)
+    {
+        // If no climate defined, then don't give a bonus
+        if (doodad.Template.ClimateId == Climate.Any || doodad.Template.ClimateId == Climate.Any)
+            return false;
+
+        // Get doodad's zone (if missing zoneId (key)
+        if (doodad.Transform.ZoneId <= 0)
+        {
+            // If ZoneId wasn't set yet, calculate it
+            var zoneId = WorldManager.Instance.GetZoneId(doodad.Transform.WorldId, doodad.Transform.World.Position.X, doodad.Transform.World.Position.Y);
+            doodad.Transform.ZoneId = zoneId;
+        }
+        var zone = ZoneManager.Instance.GetZoneByKey(doodad.Transform.ZoneId);
+
+        // Get the climates list for this zone
+        var zoneClimates = ZoneManager.Instance.GetClimatesByZone(zone);
+
+        // Check if it's in there
+        return zoneClimates.Contains(doodad.Template.ClimateId);
     }
 }

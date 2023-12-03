@@ -15,6 +15,7 @@ using AAEmu.Game.Models.Game.DoodadObj.Static;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Transfers;
 using AAEmu.Game.Models.Game.Units;
+using AAEmu.Game.Models.Game.Units.Static;
 using AAEmu.Game.Models.Game.World.Transform;
 using AAEmu.Game.Models.StaticValues;
 using AAEmu.Game.Utils.DB;
@@ -27,7 +28,7 @@ namespace AAEmu.Game.Core.Managers;
 
 public class TransferManager : Singleton<TransferManager>
 {
-    private static Logger _log = LogManager.GetCurrentClassLogger();
+    private static Logger Logger { get; } = LogManager.GetCurrentClassLogger();
     private bool _initialized = false;
 
     private Dictionary<uint, TransferTemplate> _templates;
@@ -42,7 +43,7 @@ public class TransferManager : Singleton<TransferManager>
         if (_initialized)
             return;
 
-        _log.Warn("TransferTickTask: Started");
+        Logger.Warn("TransferTickTask: Started");
 
         //TransferTickTask = new TransferTickStartTask();
         //TaskManager.Instance.Schedule(TransferTickTask, TimeSpan.FromMinutes(DelayInit), TimeSpan.FromMilliseconds(Delay));
@@ -253,6 +254,9 @@ public class TransferManager : Singleton<TransferManager>
             transfer.AttachedDoodads.Add(doodad);
         }
 
+        owner.PostUpdateCurrentHp(owner, 0, owner.Hp, KillReason.Unknown);
+        transfer.PostUpdateCurrentHp(transfer, 0, transfer.Hp, KillReason.Unknown);
+
         return owner;
     }
 
@@ -366,7 +370,7 @@ public class TransferManager : Singleton<TransferManager>
         #endregion
 
         #region TransferPath
-        _log.Info("Loading transfer_path...");
+        Logger.Info("Loading transfer_path...");
 
         var worlds = WorldManager.Instance.GetWorlds();
         Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
@@ -385,7 +389,7 @@ public class TransferManager : Singleton<TransferManager>
                 if (!uint.TryParse(Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(pathFileName))),
                     out var zoneId))
                 {
-                    _log.Warn("Unable to parse zoneId from {0}", pathFileName);
+                    Logger.Warn("Unable to parse zoneId from {0}", pathFileName);
                     continue;
                 }
 
@@ -393,11 +397,11 @@ public class TransferManager : Singleton<TransferManager>
 
                 if (string.IsNullOrWhiteSpace(contents))
                 {
-                    _log.Warn($"{pathFileName} doesn't exists or is empty.");
+                    Logger.Warn($"{pathFileName} doesn't exists or is empty.");
                     continue;
                 }
 
-                _log.Debug($"Loading {pathFileName}");
+                Logger.Debug($"Loading {pathFileName}");
 
                 var transferPath = new List<TransferRoads>();
                 var xDoc = new XmlDocument();

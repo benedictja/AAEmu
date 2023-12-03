@@ -12,11 +12,13 @@ public class QuestActSupplySelectiveItem : QuestActTemplate
 
     public override bool Use(ICharacter character, Quest quest, int objective)
     {
-        _log.Warn("QuestActSupplySelectiveItem");
+        Logger.Warn("QuestActSupplySelectiveItem");
 
         quest.QuestRewardItemsPool.Add(new ItemCreationDefinition(ItemId, Count, GradeId));
+        // предмет будет добавлен в методе DistributeRewards()
+        // the item will be added in the DistributeRewards() method
         //character.Inventory.Bag.AcquireDefaultItem(ItemTaskType.QuestSupplyItems, ItemId, Count, GradeId, 0);
 
-        return quest.Template.Score > 0 ? objective * Count >= quest.Template.Score : objective >= Count;
+        return true;
     }
 }

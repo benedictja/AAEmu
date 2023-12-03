@@ -6,10 +6,12 @@ using AAEmu.Game.Core.Managers;
 using AAEmu.Game.GameData;
 using AAEmu.Game.Models.Game.Char;
 using AAEmu.Game.Models.Game.DoodadObj.Static;
+using AAEmu.Game.Models.Game.NPChar;
 using AAEmu.Game.Models.Game.Skills;
 using AAEmu.Game.Models.Game.Skills.Buffs;
 using AAEmu.Game.Models.Game.Skills.Static;
 using AAEmu.Game.Models.Game.Skills.Templates;
+using AAEmu.Game.Models.StaticValues;
 
 namespace AAEmu.Game.Models.Game.Units;
 
@@ -186,7 +188,7 @@ public class Buffs : IBuffs
                     hiddenBuffs.Add(buff);
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    throw new NotSupportedException(nameof(buff.Template.Kind));
             }
         }
     }
@@ -339,6 +341,19 @@ public class Buffs : IBuffs
                 buff.InUse = true;
                 buff.State = EffectState.Acting;
                 buff.Template.Start(buff.Caster, owner, buff); // TODO поменять на target
+            }
+
+            // If Owner has buffs that prevent it from doing combat, then remove the aggro for it
+            if (buffIds.Contains((uint)TagsEnum.NoFight) || buffIds.Contains((uint)TagsEnum.Returning))
+            {
+                // Unit entered a "safe zone"
+                if ((owner is Npc npc) && (npc.Ai != null))
+                {
+                    npc.ClearAllAggro();
+                }
+
+                if (owner is Unit unit)
+                    unit.IsInBattle = false;
             }
         }
 
@@ -563,12 +578,7 @@ public class Buffs : IBuffs
                 else if (template.RemoveOnMount && on == BuffRemoveOn.Mount)
                     effect.Exit();
                 else if (template.RemoveOnMove && on == BuffRemoveOn.Move)
-                {
-                    // stopping the TransferTelescopeTickStartTask if character moved
-                    TransferTelescopeManager.Instance.StopTransferTelescopeTickAsync().GetAwaiter().GetResult();
-
                     effect.Exit();
-                }
                 else if (template.RemoveOnSourceDead && on == BuffRemoveOn.SourceDead && value == effect.Caster.ObjId)
                     effect.Exit();//Need to investigate this one
                 else if (template.RemoveOnStartSkill && on == BuffRemoveOn.StartSkill)

@@ -11,7 +11,6 @@ public class PositionAndRotation
     public Vector3 Position { get; set; }
     public Vector3 Rotation { get; set; }
 
-    private const float ToShortDivider = (1f / 32768f); // ~0.000030518509f ;
     private const float ToSByteDivider = (1f / 127f); // ~0.007874015748f ;
     private const float TwoPi = (MathF.PI * 2f);
 
@@ -357,4 +356,17 @@ public class PositionAndRotation
 
         return (newX, newY, newZ);
     }
+
+    public void ApplyWorldSpawnPosition(WorldSpawnPosition wsp)
+    {
+        Position = new Vector3(wsp.X, wsp.Y, wsp.Z);
+        Rotation = new Vector3(wsp.Roll, wsp.Pitch, wsp.Yaw);
+    }
+
+    public void ApplyWorldSpawnPositionWithDeg(WorldSpawnPosition wsp)
+    {
+        Position = new Vector3(wsp.X, wsp.Y, wsp.Z);
+        Rotation = new Vector3(wsp.Roll.DegToRad(), wsp.Pitch.DegToRad(), wsp.Yaw.DegToRad());
+    }
+
 }

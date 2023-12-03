@@ -11,6 +11,7 @@ using AAEmu.Game.Models.Json;
 using AAEmu.Game.Utils.Converters;
 using Newtonsoft.Json;
 using AAEmu.Game.Utils.Scripts.SubCommands;
+using AAEmu.Game.Utils.Scripts;
 using AAEmu.Game.Utils;
 
 namespace AAEmu.Game.Scripts.SubCommands.Doodads;
@@ -25,45 +26,45 @@ public class DoodadSaveSubCommand : SubCommandBase
         AddParameter(new NumericSubCommandParameter<uint>("ObjId", "Object Id", true));
     }
 
-    public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters)
+    public override void Execute(ICharacter character, string triggerArgument, IDictionary<string, ParameterValue> parameters, IMessageOutput messageOutput)
     {
         uint doodadObjId = parameters["ObjId"];
         var doodad = WorldManager.Instance.GetDoodad(doodadObjId);
         if (doodad is null)
         {
-            SendColorMessage(character, Color.Red, $"Doodad with objId {doodadObjId} does not exist |r");
+            SendColorMessage(messageOutput, Color.Red, $"Doodad with objId {doodadObjId} does not exist |r");
             return;
         }
 
         var world = WorldManager.Instance.GetWorld(doodad.Transform.WorldId);
         if (world is null)
         {
-            SendColorMessage(character, Color.Red, "Could not find the worldId {0} |r", doodad.Transform.WorldId);
+            SendColorMessage(messageOutput, Color.Red, "Could not find the worldId {0} |r", doodad.Transform.WorldId);
             return;
         }
 
         // Load Doodad spawns
-        _log.Info("Loading spawns...");
+        Logger.Info("Loading spawns...");
         var worldPath = Path.Combine(FileManager.AppPath, "Data", "Worlds", world.Name);
         var jsonFileName = Path.Combine(worldPath, "doodad_spawns_new.json");
 
         if (!File.Exists(jsonFileName))
         {
-            SendColorMessage(character, Color.Red, $"World file {jsonFileName} is missing for world {world.Name}");
-            _log.Info($"World file {jsonFileName} is missing for world {world.Name}");
+            SendColorMessage(messageOutput, Color.Red, $"World file {jsonFileName} is missing for world {world.Name}");
+            Logger.Info($"World file {jsonFileName} is missing for world {world.Name}");
             return;
         }
 
         var contents = FileManager.GetFileContents(jsonFileName);
         if (string.IsNullOrWhiteSpace(contents))
         {
-            _log.Warn($"World file {jsonFileName} is empty, using empty spawners list");
+            Logger.Warn($"World file {jsonFileName} is empty, using empty spawners list");
             contents = "[]";
         }
 
         if (!JsonHelper.TryDeserializeObject<List<JsonDoodadSpawns>>(contents, out var fileSpawnersList, out _))
         {
-            SendColorMessage(character, Color.Red, $"Incorrect Json format for file {jsonFileName}");
+            SendColorMessage(messageOutput, Color.Red, $"Incorrect Json format for file {jsonFileName}");
             return;
         }
 
@@ -95,6 +96,6 @@ public class DoodadSaveSubCommand : SubCommandBase
 
         var serialized = JsonConvert.SerializeObject(fileSpawners.Values.ToArray(), Formatting.Indented, new JsonModelsConverter());
         FileManager.SaveFile(serialized, string.Format(jsonFileName, FileManager.AppPath));
-        SendMessage(character, "Doodad ObjId: {0} has been saved!", doodad.ObjId);
+        SendMessage(messageOutput, "Doodad ObjId: {0} has been saved!", doodad.ObjId);
     }
 }

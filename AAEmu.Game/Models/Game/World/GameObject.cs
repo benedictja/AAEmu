@@ -10,7 +10,7 @@ namespace AAEmu.Game.Models.Game.World;
 
 public class GameObject : IGameObject
 {
-    protected static Logger Log => LogManager.GetCurrentClassLogger();
+    protected static Logger Logger => LogManager.GetCurrentClassLogger();
 
     public Guid Guid { get; set; } = Guid.NewGuid();
     public uint ObjId { get; set; }
@@ -98,6 +98,10 @@ public class GameObject : IGameObject
             chr.SendPacket(packet);
     }
 
+    /// <summary>
+    /// Make GameObject visible to player, on it's own only propagates children, needs to be inherited and calling base at the end of it
+    /// </summary>
+    /// <param name="character"></param>
     public virtual void AddVisibleObject(Character character)
     {
         if ((Transform != null) && (Transform.Children.Count > 0))

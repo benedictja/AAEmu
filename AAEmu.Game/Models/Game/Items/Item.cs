@@ -6,39 +6,6 @@ using AAEmu.Game.Models.Game.Items.Templates;
 
 namespace AAEmu.Game.Models.Game.Items;
 
-[Flags]
-public enum ItemFlag : byte
-{
-    None = 0x00,
-    SoulBound = 0x01,
-    HasUCC = 0x02,
-    Secure = 0x04,
-    Skinized = 0x08,
-    Unpacked = 0x10,
-    AuctionWin = 0x20
-}
-
-public enum ShopCurrencyType : byte
-{
-    Money = 0,
-    Honor = 1,
-    VocationBadges = 2,
-    SiegeShop = 3,
-}
-
-public struct ItemLocation
-{
-    public SlotType slotType;
-    public byte Slot;
-}
-
-public struct ItemIdAndLocation
-{
-    public ulong Id;
-    public SlotType SlotType;
-    public byte Slot;
-}
-
 
 public class Item : PacketMarshaler, IComparable<Item>
 {
@@ -68,6 +35,7 @@ public class Item : PacketMarshaler, IComparable<Item>
     public ulong Id { get => _id; set { _id = value; _isDirty = true; } }
     public uint TemplateId { get => _templateId; set { _templateId = value; _isDirty = true; } }
     public ItemTemplate Template { get; set; }
+    public virtual uint DetailBytesLength { get; } = 0;
     public SlotType SlotType { get => _slotType; set { _slotType = value; _isDirty = true; } }
     public int Slot { get => _slot; set { _slot = value; _isDirty = true; } }
     public byte Grade { get => _grade; set { _grade = value; _isDirty = true; } }
@@ -132,14 +100,14 @@ public class Item : PacketMarshaler, IComparable<Item>
     // Helper
     public ItemContainer _holdingContainer { get; set; }
 
-    public static uint Coins = 500;
-    public static uint TaxCertificate = 31891;
-    public static uint BoundTaxCertificate = 31892;
-    public static uint AppraisalCertificate = 28085;
-    public static uint CrestStamp = 17662;
-    public static uint CrestInk = 17663;
-    public static uint SheetMusic = 28051;
-    public static uint SalonCertificate = 30811;
+    public static uint Coins { get; } = 500;
+    public static uint TaxCertificate { get; } = 31891;
+    public static uint BoundTaxCertificate { get; } = 31892;
+    public static uint AppraisalCertificate { get; } = 28085;
+    public static uint CrestStamp { get; } = 17662;
+    public static uint CrestInk { get; } = 17663;
+    public static uint SheetMusic { get; } = 28051;
+    public static uint SalonCertificate { get; } = 30811;
 
     /// <summary>
     /// Sort will use itemSlot numbers
@@ -224,37 +192,39 @@ public class Item : PacketMarshaler, IComparable<Item>
     public virtual void ReadDetails(PacketStream stream)
     {
         var mDetailLength = 0;
-        switch ((byte)DetailType)
+        switch (DetailType)
         {
-            case 1: // Equipment // есть расшифровка в items/Equipment
-                mDetailLength = 56;
+            case ItemDetailType.Equipment: // 1
+                mDetailLength = 56; // есть расшифровка в items/Equipment
                 break;
-            case 2: // Slave
+            case ItemDetailType.Slave: // 2
                 mDetailLength = 30;
                 break;
-            case 3: // Mate
+            case ItemDetailType.Mate: // 3
                 mDetailLength = 7; // есть расшифровка в items/Summon
                 break;
-            case 4: // Ucc
+            case ItemDetailType.Ucc: // 4
                 mDetailLength = 10; // есть расшифровка в items/UccItem
                 break;
-            case 5:  // Treasure
-            case 11: // Location
+            case ItemDetailType.Treasure: // 5
+            case ItemDetailType.Location: // 11
                 mDetailLength = 25;
                 break;
-            case 6: // BigFish  // есть расшифровка в items/BigFish
-            case 7: // Decoration
-                mDetailLength = 17;
+            case ItemDetailType.BigFish: // 6
+            case ItemDetailType.Decoration: // 7
+                mDetailLength = 17; // есть расшифровка в items/BigFish
                 break;
-            case 8: // MusicSheet
+            case ItemDetailType.MusicSheet: // 8
                 mDetailLength = 9; // есть расшифровка в items/MusicSheetItem
                 break;
-            case 9: // Glider
+            case ItemDetailType.Glider: // 9
                 mDetailLength = 5;
                 break;
-            case 10: // SlaveEquipment
+            case ItemDetailType.SlaveEquipment: // 10
                 mDetailLength = 13;
                 break;
+            case ItemDetailType.TypeMax:
+            case ItemDetailType.Invalid:
             default:
                 break;
         }
@@ -284,7 +254,7 @@ public class Item : PacketMarshaler, IComparable<Item>
                 mDetailLength = 10; // есть расшифровка в items/UccItem
                 break;
             case ItemDetailType.Treasure:
-                //case ItemDetailType.Location: // нет в 1.2
+            case ItemDetailType.Location: // нет в 1.2
                 mDetailLength = 25;
                 break;
             case ItemDetailType.BigFish: // есть расшифровка в items/BigFish
@@ -297,9 +267,9 @@ public class Item : PacketMarshaler, IComparable<Item>
             case ItemDetailType.Glider:
                 mDetailLength = 5;
                 break;
-            //case ItemDetailType.SlaveEquipment: // нет в 1.2
-            //    mDetailLength = 13;
-            //    break;
+            case ItemDetailType.SlaveEquipment: // нет в 1.2
+                mDetailLength = 13;
+                break;
             default:
                 break;
         }
